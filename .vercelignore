@@ -1,0 +1,15 @@
+# Keep the deployment lean and never upload secrets/dev artifacts.
+node_modules/
+backend/.venv/
+backend/__pycache__/
+backend/**/__pycache__/
+backend/.pytest_cache/
+frontend/.vite/
+frontend/node_modules/
+tests/
+*.csv
+*.parquet
+.env
+.env.*
+.git
+.gitignore

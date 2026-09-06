@@ -1,0 +1,69 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background-color: #f1f5f9;
+  color: #0f172a;
+  font-family: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Thin, unobtrusive scrollbars */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 transparent;
+}
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 8px;
+}
+
+@layer components {
+  .card {
+    @apply bg-white rounded-xl border border-ink-200/70 shadow-card;
+  }
+  .card-pad {
+    @apply p-5;
+  }
+  .section-title {
+    @apply text-sm font-semibold uppercase tracking-wide text-ink-500;
+  }
+  .kpi-value {
+    @apply text-3xl font-bold tabular-nums text-ink-900;
+  }
+  .kpi-label {
+    @apply text-xs font-medium text-ink-500 uppercase tracking-wide;
+  }
+  .chip {
+    @apply inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium;
+  }
+}
+
+/* Recharts cursor + tooltip polish */
+.recharts-cartesian-axis-tick text {
+  fill: #94a3b8;
+  font-size: 11px;
+}
+.recharts-default-tooltip {
+  border-radius: 10px !important;
+  border: 1px solid #e2e8f0 !important;
+  box-shadow: 0 6px 16px rgba(15, 23, 42, 0.08) !important;
+  font-size: 12px;
+}

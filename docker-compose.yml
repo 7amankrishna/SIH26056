@@ -1,0 +1,24 @@
+# APIx — Real-Time Airfare Price Index for India
+# Development-free, offline demo: `docker compose up --build`
+#   * backend  -> FastAPI + deterministic demo dataset (0.0.0.0:8000)
+#   * frontend -> built SPA served by Nginx, /api proxied to backend (0.0.0.0:8080)
+
+services:
+  backend:
+    build: ./backend
+    container_name: apix-backend
+    environment:
+      - APIX_DEMO_MODE=1
+      - APIX_DEMO_DAYS=90
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+
+  frontend:
+    build: ./frontend
+    container_name: apix-frontend
+    depends_on:
+      - backend
+    ports:
+      - "8080:80"
+    restart: unless-stopped

@@ -1,0 +1,5 @@
+# Vercel Python runtime dependencies (also used if a root level install is run).
+# Keep in sync with backend/requirements.txt.
+fastapi==0.115.6
+pydantic==2.10.4
+uvicorn[standard]==0.32.1
