@@ -20,6 +20,7 @@ from __future__ import annotations
 import asyncio
 import os
 import datetime as dt
+import threading
 import time
 import traceback
 from dataclasses import dataclass, field
@@ -705,5 +706,24 @@ def _is_html_capture(adapter: Any) -> bool:
     return type(adapter).__name__ == "FixtureHtmlCaptureAdapter"
 
 
-#: process-wide singleton used by FastAPI dependency + lifespan hooks
-collection_service = CollectionService()
+class _LazyCollectionService:
+    """Resolve the collector only when a request or lifespan actually needs it."""
+
+    def __init__(self) -> None:
+        self._service: Optional[CollectionService] = None
+        self._lock = threading.Lock()
+
+    def _get(self) -> CollectionService:
+        if self._service is None:
+            with self._lock:
+                if self._service is None:
+                    self._service = CollectionService()
+        return self._service
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._get(), name)
+
+
+# Process-wide lazy proxy used by FastAPI dependency + lifespan hooks. Importing
+# api/index.py must not open a database connection or create a local database.
+collection_service = _LazyCollectionService()

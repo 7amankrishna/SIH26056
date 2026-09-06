@@ -22,6 +22,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable, Optional
+from urllib.parse import urlsplit
 
 try:
     import psycopg2
@@ -32,6 +33,55 @@ except ImportError:
 from ..config import settings
 
 SCHEMA_VERSION = 1
+
+
+class StoreConfigurationError(RuntimeError):
+    """Raised when the deployment database configuration is unsafe or unusable."""
+
+
+def _production_environment() -> bool:
+    """Detect hosted production contexts without importing application settings."""
+    if os.getenv("VERCEL") or os.getenv("VERCEL_ENV"):
+        return True
+    return any(
+        os.getenv(name, "").strip().lower() in {"production", "prod"}
+        for name in ("APIX_ENV", "APP_ENV", "ENVIRONMENT", "PYTHON_ENV")
+    )
+
+
+def validate_database_url(value: str) -> str:
+    """Validate a psycopg2 connection URI or keyword DSN without exposing it."""
+    database_url = value.strip()
+    if not database_url:
+        raise StoreConfigurationError("DATABASE_URL must not be empty.")
+
+    if "://" in database_url:
+        parsed = urlsplit(database_url)
+        if parsed.scheme.lower() not in {"postgres", "postgresql"}:
+            raise StoreConfigurationError(
+                "DATABASE_URL must be a PostgreSQL connection URL."
+            )
+        if not parsed.netloc and not parsed.path:
+            raise StoreConfigurationError("DATABASE_URL is not a valid PostgreSQL URL.")
+        return database_url
+
+    # psycopg2 also accepts keyword DSNs such as "dbname=app host=db user=...".
+    # Reject filesystem paths and opaque values before handing them to the driver.
+    if "=" not in database_url or database_url.startswith(("/", "./", "../", "~")):
+        raise StoreConfigurationError(
+            "DATABASE_URL must be a PostgreSQL URL or keyword DSN."
+        )
+    if psycopg2 is None:
+        raise StoreConfigurationError(
+            "DATABASE_URL is configured but psycopg2-binary is not installed."
+        )
+    try:
+        parsed_dsn = psycopg2.extensions.parse_dsn(database_url)
+    except Exception as exc:
+        raise StoreConfigurationError("DATABASE_URL is not a valid PostgreSQL DSN.") from exc
+    if not parsed_dsn.get("dbname") and not parsed_dsn.get("service"):
+        raise StoreConfigurationError("DATABASE_URL DSN must specify a database.")
+    return database_url
 
 OBS_COLUMNS = (
     "observation_id", "source", "origin", "destination", "route", "departure_date",
@@ -160,10 +210,22 @@ class StoredRun:
 
 class Store:
     def __init__(self, path: Optional[Path] = None):
-        self.db_url = os.environ.get("DATABASE_URL")
+        configured_url = os.environ.get("DATABASE_URL", "").strip()
+        if configured_url:
+            self.db_url = validate_database_url(configured_url)
+            self.backend = "postgresql"
+        elif _production_environment():
+            raise StoreConfigurationError(
+                "DATABASE_URL is required in production; SQLite is local-development only."
+            )
+        else:
+            self.db_url = None
+            self.backend = "sqlite"
         if self.db_url:
             if not psycopg2:
-                raise RuntimeError("DATABASE_URL is set but psycopg2-binary is not installed.")
+                raise StoreConfigurationError(
+                    "DATABASE_URL is configured but psycopg2-binary is not installed."
+                )
             self.path = None
         else:
             self.path = Path(path or settings.data_dir / "apix.sqlite3")
