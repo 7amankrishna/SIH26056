@@ -40,6 +40,14 @@ def _dig(obj: Any, path: str) -> Any:
     return cur
 
 
+def _int_or_none(value: Any) -> Optional[int]:
+    """First integer in a cell's text, e.g. '3 left' -> 3, '' -> None."""
+    if value is None:
+        return None
+    m = re.search(r"\d+", str(value))
+    return int(m.group()) if m else None
+
+
 def _money(value: Any) -> float:
     """Parse '4,899.00', '₹4899', 'INR 4,899', 4899 -> 4899.0."""
     if value is None:
@@ -295,6 +303,11 @@ class HttpHtmlAdapter(HttpJsonAdapter):
         for b in blocks:
             values: dict[str, str] = {}
             for key, sel in self.field_selectors.items():
+                # A selector starting with "@" reads an attribute off the block
+                # element itself — real pages put ids in data-* attributes, not text.
+                if sel.startswith("@"):
+                    values[key] = b.attrs.get(sel[1:], "")
+                    continue
                 found = [n for n in walk([b]) if _matches(n, sel)]
                 values[key] = found[0].text if found else ""
             batch.offers.append(
@@ -330,6 +343,7 @@ class HttpHtmlAdapter(HttpJsonAdapter):
             "fees": _money(v.get("fees")),
             "total_fare": total,
             "availability": (v.get("availability") or "AVAILABLE").upper(),
-            "seats_remaining": None,
-            "stops": None,
+            # Pages usually render the seat count as plain digits ("3 left" -> 3).
+            "seats_remaining": _int_or_none(v.get("seats")),
+            "stops": _int_or_none(v.get("stops")),
         }

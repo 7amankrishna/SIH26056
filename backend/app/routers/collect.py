@@ -94,6 +94,23 @@ def collect_status() -> dict:
     return collection_service.status()
 
 
+@router.get("/collect/preflight")
+async def collect_preflight(
+    url: str = Query(..., description="Absolute https:// URL of a results page or JSON endpoint."),
+    user_agent: Optional[str] = Query(None, description="Evaluate the robots rules for this UA instead of ours."),
+) -> dict:
+    """Would our collector be allowed to scrape this? Verdict + reasons + cost.
+
+    Run *before* configuring a source. It reports the robots verdict, the
+    crawl-delay we would adopt, the requests/day that implies, and the questions
+    a robots file cannot answer (ToS clause, redistribution rights, personal data).
+    A denial here is final — the response lists what we will not do to work around it.
+    """
+    from ..collect.preflight import preflight
+
+    return await preflight(url, ua=user_agent)
+
+
 @router.get("/collect/policy")
 def collect_policy() -> dict:
     """The rules the engine enforces, straight from the code."""

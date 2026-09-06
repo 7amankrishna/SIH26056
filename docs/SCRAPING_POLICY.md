@@ -37,6 +37,7 @@ What it does not do is evade a site's access controls.
 | Honest failure | `store.collection_runs` — blocked/failed/partial runs are rows in the run log, rendered on the Collection Monitor and Live Feed screens |
 | Bot-wall handling | `SourceAdapter._guard_against_denial` — a 200 response that is actually an interstitial is classified `blocked` and stopped, never solved |
 | No silent data loss | `normalize` + `store` — every response body is archived verbatim before parsing, so a rejected observation is still auditable |
+| Decide before you fetch | [`preflight.py`](../backend/app/collect/preflight.py) — `python -m app.collect.preflight <url>` / `GET /api/collect/preflight?url=` reports the verdict, the crawl-delay and the request volume a sweep would generate, plus the ToS/redistribution checklist a machine cannot settle |
 
 The per-sweep request ceiling is deliberately **not** counted as a source
 failure (`kind="ceiling"`): if we stop ourselves for politeness, that must not
@@ -82,6 +83,7 @@ data you are allowed to have:
 | A public page whose ToS permit automation | implemented via config | `APIX_COLLECTOR_SOURCES=http_html` + `APIX_LIVE_HTTP_HTML_*`; robots gate enforced |
 | Manually supplied datasets (DGCA, airline tariff sheets, MoSPI drops) | supported | Load into the `observations` table, or add a small adapter |
 | Authorized offline capture (this repo) | default — `APIX_COLLECTOR_SOURCES=fixture` | In-process OTA-shaped payloads; exercises fetch → parse → normalize → quality → store → index → API with no network at all |
+| Authorized offline **page scrape** | `APIX_COLLECTOR_SOURCES=fixture_html` | Renders an HTML fare table and scrapes it with `HttpHtmlAdapter` (selectors, `₹4,899.00` money strings, `@data-offer-id` attributes, blank sold-out price cells). No API anywhere in the path — this is the scraping code path itself, runnable offline |
 
 A `tfs=`-style booking URL is still useful here — as a **query specification**: it
 encodes origin, destination and date, which is exactly what `collect.Query`

@@ -108,10 +108,17 @@ in use.
 
 ```bash
 cd backend
-APIX_COLLECTOR_SOURCES=fixture \
+APIX_COLLECTOR_SOURCES=fixture_html \   # or: fixture (JSON capture), amadeus, http_html
 APIX_MIN_REQUEST_GAP_SECONDS=0 \
 .venv/bin/python -m uvicorn app.main:app --port 8000
 ```
+
+`fixture_html` is the one to show a jury: the collector fetches an HTML fare
+**page** and extracts offers with CSS-ish selectors (`div.offer`, `span.price`,
+`@data-offer-id`) through the same `HttpHtmlAdapter` used for real targets — so
+the demo is genuinely *scraping*, not an API call, and it needs no credentials
+and no network. `₹4,899.00` formatted amounts, blank price cells on sold-out
+rows and attribute-carried ids are all parsed by the real code path.
 
 Then flip the dashboard's **Scraper / Demo data** switch (top right), or drive it
 from the CLI:
@@ -123,7 +130,20 @@ curl -X POST localhost:8000/api/data-source -d '{"mode":"live"}' -H 'content-typ
 curl localhost:8000/api/overview | jq '{data_origin, current_apix, days_collected}'
 ```
 
-The default `fixture` source needs no credentials and makes no network calls, so
+### Checking a new source before you scrape it
+
+```bash
+cd backend && .venv/bin/python -m app.collect.preflight https://example.com/del-bom-fares
+```
+
+Prints the robots verdict for our user-agent, the `Crawl-delay` we would adopt,
+the resulting requests/day for the configured sweep, and the questions a
+`robots.txt` cannot answer (ToS clause, redistribution rights, personal data).
+Same function as `GET /api/collect/preflight?url=…`. If it says denied, that is
+the end of the conversation — the output lists what the engine will not do to
+work around it.
+
+The default `fixture` / `fixture_html` sources need no credentials and make no network calls, so
 the whole live path — fetch → parse → normalize → quality → store → index → API —
 is demonstrable in a room with no internet. Switch `APIX_COLLECTOR_SOURCES` to
 `amadeus` (with `AMADEUS_CLIENT_ID`/`AMADEUS_CLIENT_SECRET`) to collect from a

@@ -397,6 +397,131 @@ def test_html_adapter_extracts_offers_from_markup():
 
 
 # --------------------------------------------------------------------------- #
+# HTML page scraping (selector extraction, no API in the path)
+# --------------------------------------------------------------------------- #
+
+def test_html_capture_scrapes_markup_into_canonical_observations(service):
+    """The default live demo path is a real page scrape: HTML in, fares out."""
+    from app.collect.capture_html import FixtureHtmlCaptureAdapter
+
+    adapter = FixtureHtmlCaptureAdapter(sweep_seq=1)
+    service.adapters = {"capture_html": adapter}
+    import asyncio
+
+    result = asyncio.run(service.run_sweep(routes=["DEL-BOM", "BOM-DEL"]))
+    stats = result.per_source["capture_html"]
+    assert stats["status"] == "success"
+    assert stats["observations"] > 0
+    assert stats["invalid"] == 0  # currency strings like "₹4,899.00" parse cleanly
+
+    rows = service.store.all_observations()
+    assert rows, "scraped rows are persisted"
+    assert {r["route"] for r in rows} == {"DEL-BOM", "BOM-DEL"}
+    assert all(r["total_fare"] > 0 for r in rows if r["quality_status"] == "VALID")
+    # the archived payload is the extracted offer, traceable to the page URL
+    payloads = service.store.recent_payloads(1)
+    assert payloads[0]["url"].startswith("https://pagecapture.apix.invalid/fares")
+    assert payloads[0]["payload"]["flight_number"]
+
+
+def test_html_adapter_reads_attributes_and_blank_price_cells():
+    import asyncio
+
+    from app.collect.adapters_http import HttpHtmlAdapter
+
+    page = """
+    <div class="offers">
+      <div class="offer" data-id="X1"><span class="p">₹5,120.50</span><span class="f">6E 512</span>
+           <span class="a">AVAILABLE</span><span class="s">3</span></div>
+      <div class="offer" data-id="X2"><span class="p"></span><span class="f">AI 863</span>
+           <span class="a">SOLD_OUT</span><span class="s">0</span></div>
+    </div>"""
+    adapter = HttpHtmlAdapter(
+        source_id="attrtest", name="Attr test", url_template="https://x.invalid/p?d={departure_date}",
+        offer_selector="div.offer",
+        field_selectors={"offer_id": "@data-id", "total": "span.p", "flight_number": "span.f",
+                         "availability": "span.a", "seats": "span.s"},
+        compliance="authorized",
+    )
+    adapter.bind_transport(scripted_transport([(200, page.encode())]))
+
+    async def allowed(*a, **k):
+        return None
+
+    adapter._allowed = allowed
+    batch = asyncio.run(adapter.collect(make_query()))
+    first, second = batch.offers[0].payload, batch.offers[1].payload
+    assert first["offer_id"] == "X1" and first["total_fare"] == 5120.50
+    assert first["seats_remaining"] == 3
+    assert second["offer_id"] == "X2"
+    assert second["availability"] == "SOLD_OUT"  # blank price cell + SOLD_OUT flag
+
+
+# --------------------------------------------------------------------------- #
+# preflight: may we collect from this at all?
+# --------------------------------------------------------------------------- #
+
+def test_preflight_denied_by_robots_and_reports_no_workaround():
+    import asyncio
+
+    from app.collect.preflight import preflight
+
+    def handler(url):
+        return HttpResponse(url=url, status_code=200, body=b"User-agent: *\nDisallow: /\n")
+
+    report = asyncio.run(preflight("https://target.invalid/fares", transport=CallableTransport(handler)))
+    assert report["verdict"] == "denied"
+    assert "disallows" in report["reason"]
+    assert report["will_not_do"], "a denial must come with the list of non-evasions"
+    assert report["human_checklist"]
+
+
+def test_preflight_allowed_computes_the_request_budget():
+    import asyncio
+
+    from app.collect.preflight import preflight
+    from app.config import settings
+
+    def handler(url):
+        return HttpResponse(url=url, status_code=200, body=b"User-agent: *\nAllow: /\nCrawl-delay: 4\n")
+
+    report = asyncio.run(
+        preflight("https://allowed.invalid/fares", transport=CallableTransport(handler))
+    )
+    assert report["verdict"] == "allowed"
+    assert report["effective_min_gap_seconds"] == max(4.0, settings.min_seconds_between_requests)
+    assert report["sweep_budget"]["requests_per_sweep"] > 0
+    assert "APIX_LIVE_HTTP_HTML_URL" in " ".join(report["next_steps"])
+
+
+def test_preflight_refuses_non_https_and_junk():
+    import asyncio
+
+    from app.collect.preflight import preflight
+
+    for bad in ("ftp://x.invalid/a", "javascript:alert(1)", "http://insecure.invalid/fares"):
+        report = asyncio.run(preflight(bad, transport=CallableTransport(lambda u: HttpResponse(url=u, status_code=200, body=b""))))
+        assert report["verdict"] == "denied", bad
+
+
+def test_preflight_endpoint_is_exposed(store, monkeypatch):
+    import asyncio
+
+    from fastapi.testclient import TestClient
+    from app.routers import collect as collect_router
+    from app.main import app
+
+    async def fake(url, *, transport=None, ua=None):
+        return {"url": url, "verdict": "denied", "reason": "robots disallow"}
+
+    monkeypatch.setattr("app.collect.preflight.preflight", fake)
+    with TestClient(app) as client:
+        r = client.get("/api/collect/preflight", params={"url": "https://x.invalid/p"})
+        assert r.status_code == 200
+        assert r.json()["verdict"] == "denied"
+
+
+# --------------------------------------------------------------------------- #
 # store
 # --------------------------------------------------------------------------- #
 
@@ -665,3 +790,29 @@ def test_sweep_without_adapters_is_not_silently_successful(store, monkeypatch):
         r = client.post("/api/collect/sweep", json={"wait": True})
         assert r.status_code == 409
         assert "APIX_COLLECTOR_SOURCES" in r.json()["detail"]
+
+
+def test_sold_out_without_a_price_is_a_market_state_not_a_defect():
+    """A blank price cell + SOLD_OUT must not inflate the invalid count."""
+    from datetime import date as _date
+
+    today = _date.today().isoformat()
+    ctx = QualityContext.build(today, {}, [])
+    q = make_query()
+    sold = normalize_offer(
+        RawOffer(
+            payload=offer_payload(total_fare=0.0, base_fare=0.0, taxes=0.0, fees=0.0,
+                                  availability="SOLD_OUT", seats_remaining=0),
+            source="stub", url="u", fetched_at=f"{today}T10:00:00+05:30",
+        ),
+        q, ctx, 0,
+    )
+    assert sold["quality_status"] == "SOLD_OUT"
+
+    # ...but no price *and* no sold-out signal is still a broken payload
+    broken = normalize_offer(
+        RawOffer(payload=offer_payload(total_fare=0.0, availability="AVAILABLE", seats_remaining=5),
+                 source="stub", url="u", fetched_at=f"{today}T10:00:00+05:30"),
+        q, ctx, 1,
+    )
+    assert broken["quality_status"] == "INVALID"

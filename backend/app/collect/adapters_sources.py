@@ -175,6 +175,58 @@ class AmadeusAdapter(HttpJsonAdapter):
 # --------------------------------------------------------------------------- #
 
 
+def simulate_market(origin: str, destination: str, dep: dt.date, lead: int, sweep_seq: int) -> list[dict[str, Any]]:
+    """One deterministic price tick for a route+date, shared by both captures.
+
+    The JSON capture and the HTML capture render the *same* market state, so a
+    demo can switch between "API-shaped" and "web-page-shaped" sources without
+    the numbers moving.
+    """
+    rng = random.Random(int(hashlib.sha256(f"{origin}{destination}{dep}{lead}|{sweep_seq}".encode()).hexdigest()[:12], 16))
+    route_key = f"{origin}-{destination}"
+    meta = ROUTES.get(route_key) or next(iter(ROUTES.values()))
+    airlines = ROUTE_AIRLINES.get(route_key) or list(AIRLINES)[:4]
+    lf = LEAD_FACTOR.get(max(1, min(45, lead)), 1.0)
+
+    offers: list[dict[str, Any]] = []
+    for i, code in enumerate(airlines):
+        factor = AIRLINES[code]["factor"]
+        drift = 1.0 + rng.uniform(-0.035, 0.045) + min(0.20, 0.004 * sweep_seq) * rng.choice([-1, 1])
+        total = round(meta["base_fare"] * factor * lf * drift, 2)
+        outlier = rng.random() < 0.06
+        if outlier:
+            total = round(total * rng.uniform(1.3, 1.7), 2)
+        seats = rng.choice([1, 2, 3, 7, 9, 14, 21, 33, 40])
+        sold_out = rng.random() < 0.05
+        hour = 5 + (i * 4) % 18
+        offers.append(
+            {
+                "offerId": f"CAP-{origin}{destination}{dep.strftime('%y%m%d')}-{i}",
+                "marketingCarrier": code,
+                "carrierName": AIRLINES[code]["name"],
+                "flightNumber": f"{code}{101 + rng.randint(0, 880)}",
+                "departureAirport": origin,
+                "arrivalAirport": destination,
+                "departureDateTime": f"{dep.isoformat()}T{hour:02d}:{rng.choice([0, 15, 30, 45]):02d}:00",
+                "cabin": "ECONOMY",
+                "bookingClass": rng.choice(["E", "L", "M", "V", "K", "B", "Q"]),
+                "currency": "INR",
+                "fareComponents": {
+                    "base": round(total * 0.78, 2),
+                    "tax": round(total * 0.16, 2),
+                    "fee": round(total * 0.06, 2),
+                    "total": total,
+                },
+                "seatsLeft": 0 if sold_out else seats,
+                "availability": "SOLD_OUT" if sold_out else ("LIMITED" if seats <= 9 else "AVAILABLE"),
+                "numberOfStops": 0 if rng.random() < 0.82 else 1,
+                "baggageCheckedKg": rng.choice([None, 15, 25]),
+                "fareRules": {"refundable": rng.random() < 0.18, "changeable": rng.random() < 0.42},
+            }
+        )
+    return offers
+
+
 class CaptureTransport(CallableTransport):
     """Serves an OTA-style JSON payload from an in-process market simulator.
 

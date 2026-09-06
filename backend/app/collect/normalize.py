@@ -157,20 +157,23 @@ def _assess(obs: dict[str, Any], fp: str, ctx: QualityContext) -> tuple[str, Opt
         return "INVALID", "flag:malformed_route"
     if obs["currency"] not in KNOWN_CURRENCIES:
         return "INVALID", f"flag:unsupported_currency:{obs['currency']}"
-    if obs["total_fare"] <= 0:
-        return "INVALID", "flag:non_positive_fare"
     if obs["lead_time_days"] < 0:
         return "INVALID", "flag:departure_before_collection"
+
+    # --- market state, checked *before* the fare sanity rules --------------
+    # A sold-out offer legitimately has no price, so "price missing" here is a
+    # market fact, not a collection defect. Classifying it INVALID would inflate
+    # the failure rate on the quality screen and hide real parse errors in it.
+    if obs["availability"] == "SOLD_OUT" or obs["seats_remaining"] == 0:
+        return "SOLD_OUT", "flag:sold_out"
+    if obs["total_fare"] <= 0:
+        return "INVALID", "flag:non_positive_fare"
     if obs["total_fare"] > 500_000:
         return "INVALID", "flag:implausible_fare_magnitude"
     # base + components should reconcile with the total, loosely
     components = obs["base_fare"] + obs["taxes"] + obs["fees"]
     if obs["base_fare"] > 0 and components > obs["total_fare"] * 1.6:
         return "SUSPICIOUS", "flag:fare_components_inconsistent"
-
-    # --- market state ----------------------------------------------------- #
-    if obs["availability"] == "SOLD_OUT":
-        return "SOLD_OUT", "flag:sold_out"
 
     # --- freshness -------------------------------------------------------- #
     if _is_stale(obs["collection_timestamp"]):

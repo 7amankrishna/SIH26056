@@ -68,7 +68,9 @@ class Settings:
     sweep_interval_seconds: int = int(_env("APIX_SWEEP_INTERVAL_SECONDS", "900"))
 
     # Adapters to register, comma separated.
-    #   fixture  - authorized local replay capture (no network, demo-safe)
+    #   fixture       - authorized local JSON capture (no network, demo-safe)
+    #   fixture_html  - authorized local HTML *page* capture: selector scraping,
+    #                   no API anywhere in the path
     #   amadeus  - permissioned Amadeus for Developers self-service API
     #   http_json / http_html - generic policy-respecting fetchers for
     #                            sources that explicitly permit automation

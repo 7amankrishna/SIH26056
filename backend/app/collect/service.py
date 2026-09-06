@@ -134,8 +134,15 @@ class CollectionService:
         self._registered = True
 
     def _build(self, source_id: str) -> Optional[SourceAdapter]:
-        if source_id == "fixture" or source_id == "capture":
+        if source_id in {"fixture", "capture", "fixture_json"}:
             adapter = FixtureCaptureAdapter(sweep_seq=self._sweep_seq)
+            adapter.bind_transport(self._wrap(adapter, in_process=True))
+            return adapter
+        if source_id in {"fixture_html", "capture_html"}:
+            # Page scraping: markup in, selector extraction, no API in the path.
+            from .capture_html import FixtureHtmlCaptureAdapter
+
+            adapter = FixtureHtmlCaptureAdapter(sweep_seq=self._sweep_seq)
             adapter.bind_transport(self._wrap(adapter, in_process=True))
             return adapter
         if source_id == "amadeus":
@@ -173,14 +180,19 @@ class CollectionService:
         return transport
 
     def _refresh_fixture_bindings(self) -> None:
-        """Advance the offline capture to the next price tick and re-apply ceilings."""
+        """Advance the offline captures to the next price tick and re-apply ceilings."""
         from .adapters_sources import CaptureTransport
+        from .capture_html import HtmlCaptureTransport
 
         for adapter in self.adapters.values():
             if isinstance(adapter, FixtureCaptureAdapter):
-                transport = CaptureTransport(self._sweep_seq, dt.date.today())
-                transport.max_requests = settings.max_requests_per_sweep
-                adapter.bind_transport(transport)
+                transport: Any = CaptureTransport(self._sweep_seq, dt.date.today())
+            elif _is_html_capture(adapter):
+                transport = HtmlCaptureTransport(self._sweep_seq, dt.date.today())
+            else:
+                continue
+            transport.max_requests = settings.max_requests_per_sweep
+            adapter.bind_transport(transport)
 
     def register(self, adapter: SourceAdapter) -> None:
         """Let a deployment inject its own adapter (tests, licensed feeds)."""
@@ -686,6 +698,11 @@ def settings_live_kwargs(source_id: str) -> dict[str, Any]:
             kv.split(":", 1) for kv in fields.split(",") if ":" in kv
         )
     return out
+
+
+def _is_html_capture(adapter: Any) -> bool:
+    """Type-check without importing capture_html at module load (it imports us)."""
+    return type(adapter).__name__ == "FixtureHtmlCaptureAdapter"
 
 
 #: process-wide singleton used by FastAPI dependency + lifespan hooks
