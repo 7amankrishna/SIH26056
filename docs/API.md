@@ -89,13 +89,17 @@ Storage problems are reported, not crashed on:
 
 | Status | When | Body |
 | --- | --- | --- |
-| `503` | The collection store is unavailable (invalid `DATABASE_URL`, unwritable data dir) or the configured PostgreSQL cannot be reached. | `{"detail": "Collection store unavailable: …", "store_error": true}` |
+| `503` | The collection store is unavailable (invalid `DATABASE_URL` when enabled, unwritable data dir) or the configured PostgreSQL cannot be reached. | `{"detail": "Collection store unavailable: …", "store_error": true}` |
 | `200` | Same conditions, on a *read* endpoint: the store degrades to empty and says why. | `store.available: false`, `store.unavailable_reason`, `store.note` |
 | `409` | No collection adapter is enabled (`APIX_COLLECTOR_SOURCES`). | `{"detail": "No collection adapter is enabled. …"}` |
 
 Every store description carries `backend` (`sqlite` / `postgresql` /
-`unavailable`), `durable`, `ephemeral` and a human-readable `note`, so a consumer
-can tell a durable collection history from a per-instance serverless one.
+`unavailable`), `durable`, `ephemeral`, `ignores_database_url` and a human-readable
+`note`, so a consumer can tell a durable collection history from a per-instance
+serverless one. Vercel defaults to `ignores_database_url: true`: the SQLite demo
+works even if `DATABASE_URL` is malformed or unreachable. Set
+`APIX_IGNORE_DATABASE_URL=0` to opt in to PostgreSQL; only then do database URL
+validation/connection failures apply. The note never includes the URL or credentials.
 
 Full parameter and schema documentation is available in the OpenAPI schema at
 `/openapi.json` and the interactive `/docs`.

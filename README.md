@@ -64,9 +64,10 @@ wrapper is required — Vercel runs the ASGI app natively.
 3. The dashboard and the API share one URL.
 
 The scraper works on Vercel with no configuration at all (a clearly-labelled
-temporary store under `/tmp`). To make collected history survive a cold start or
-a redeploy, add one environment variable — `DATABASE_URL` — pointing at a free
-Supabase PostgreSQL database, and paste
+temporary store under `/tmp`). **On Vercel, `DATABASE_URL` is ignored by default**,
+even if an old value is still in the project settings. To make collected history
+survive a cold start or redeploy, set `APIX_IGNORE_DATABASE_URL=0` and set
+`DATABASE_URL` to a Supabase PostgreSQL connection string, then paste
 [`db/supabase_schema.sql`](db/supabase_schema.sql) into Supabase's SQL editor.
 Step-by-step, without a terminal: [Setup guide](docs/SETUP_GUIDE.md).
 
@@ -78,11 +79,12 @@ See [Deployment](docs/DEPLOYMENT.md#option-a--vercel-recommended-for-a-public-de
 The scraper works on Vercel as well: the runtime has no process lifetime for a
 background loop, so the collector detects that and runs each sweep *inside* the
 request that asks for it — flipping the dashboard to **Scraper** collects and
-switches in one round trip. Without `DATABASE_URL` the store is SQLite under
-`/tmp`, which the API and the Live Feed screen label **ephemeral** (per instance,
-reset on cold start/redeploy); set `DATABASE_URL` to a managed PostgreSQL for
-durable collection history. Storage that cannot be used at all degrades the
-scraper only: `/api/health` still answers, and `POST /api/data-source` returns a
+switches in one round trip. By default the Vercel store is SQLite under `/tmp`,
+which the API and the Live Feed screen label **ephemeral** (per instance, reset on
+cold start/redeploy). A stale, malformed or unreachable `DATABASE_URL` cannot
+disable this demo path; PostgreSQL requires `APIX_IGNORE_DATABASE_URL=0` plus a
+valid `DATABASE_URL` for durable collection history. Storage that cannot be used
+at all degrades the scraper only: `/api/health` still answers, and `POST /api/data-source` returns a
 `503` that says why instead of an opaque `500`.
 
 OpenAPI docs land at `/docs` on the deployed URL.

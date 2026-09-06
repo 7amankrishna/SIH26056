@@ -2,7 +2,8 @@
 
 Plain-language, click-only instructions. No terminal, no commands.
 
-You need three things, all free:
+For a durable scraper you need three things, all free (Supabase is optional
+for the temporary-store demo):
 
 | Thing | What it does | Where |
 | --- | --- | --- |
@@ -11,9 +12,10 @@ You need three things, all free:
 | **Supabase** | the database that remembers what the scraper collected | supabase.com (5 minutes, below) |
 
 > **Do you even need Supabase?** No — the scraper works without it. Without a
-> database it stores collected fares in the function's temporary disk (`/tmp`),
-> which is wiped whenever Vercel restarts the function (a "cold start") or you
-> redeploy. That is fine for a live demo, and the dashboard labels it
+> database it stores collected fares in the function's temporary disk (`/tmp`).
+> Vercel ignores `DATABASE_URL` by default, including leftover/broken values.
+> This temporary store is wiped whenever Vercel restarts the function (a "cold
+> start") or you redeploy. That is fine for a live demo, and the dashboard labels it
 > **"Ephemeral collection store (serverless /tmp)"** so nobody is misled.
 > Add Supabase when you want the collected history to **survive** — days of
 > sweeps building up a real index, which is the far more convincing demo.
@@ -56,7 +58,9 @@ You can look at the data any time: left sidebar → **Table Editor**.
 
 ## Step 3 — Give Vercel the database address (2 min)
 
-You need one value: `DATABASE_URL`, the connection string.
+You need the connection string (`DATABASE_URL`) and an explicit opt-in
+(`APIX_IGNORE_DATABASE_URL=0`). Without the opt-in, Vercel uses the temporary
+SQLite store even if a database address is already configured.
 
 1. Supabase → **Project Settings** (the gear icon, bottom-left) → **Database**.
 2. Find **Connection string** (also called *Connection pooling*). Choose the
@@ -90,20 +94,24 @@ You need one value: `DATABASE_URL`, the connection string.
    - **Save**
 7. **Important:** if `DATABASE_URL` already exists there with a different value,
    **edit/replace it** — do not add a second one. (A leftover value that is not a
-   PostgreSQL address is exactly what produces
-   `DATABASE_URL must be a PostgreSQL connection URL`.)
-8. Environment variables only apply to a **new** deployment:
+   PostgreSQL address produces `DATABASE_URL must be a PostgreSQL connection
+   URL` once PostgreSQL is enabled.)
+8. Add a second environment variable in the same three environments:
+   - **Name**: `APIX_IGNORE_DATABASE_URL`
+   - **Value**: `0`
+   - **Save**
+   This enables PostgreSQL. To return to the temporary-store demo, set it to `1`
+   (or delete this opt-in) and redeploy; you need not edit `DATABASE_URL`.
+9. Environment variables only apply to a **new** deployment:
    **Deployments** → the newest one → **⋯** (three dots) → **Redeploy**.
 
 ## Step 4 — Deploy the fixed code (1 min)
 
-The scraper fix is pull request
-[#7](https://github.com/7amankrishna/SIH26056/pull/7) (branch
-`arena/01a07843-sih26056`), which also adds this guide, the Supabase schema file
-and the PostgreSQL tests.
+Deploy the latest `main`, which contains the serverless scraper fixes, the
+ignore-`DATABASE_URL` default, this guide and the Supabase schema.
 
-1. GitHub → the repository → **Pull requests** → open PR #7 →
-   **Merge pull request** (if it is not merged yet).
+1. GitHub → the repository → **Pull requests** → merge the latest scraper fix
+   into `main` if it has not already been merged.
 2. Vercel watches the `main` branch, so it builds and deploys automatically —
    watch **Deployments** until the newest one says *Ready*.
 3. If you earlier promoted a preview deployment to production, merging `main`
@@ -141,10 +149,11 @@ and the PostgreSQL tests.
 
 ## Which environment variables do I need on Vercel?
 
-**Required for a durable scraper — exactly one:**
+**Required for a durable scraper — two settings:**
 
 | Name | Value | Why |
 | --- | --- | --- |
+| `APIX_IGNORE_DATABASE_URL` | `0` | opts in to PostgreSQL instead of the Vercel temporary-store default |
 | `DATABASE_URL` | the Supabase connection string from Step 3 | where collected fares, raw payloads and run logs are stored |
 
 **Optional (the defaults are already right for a demo):**
@@ -160,11 +169,13 @@ and the PostgreSQL tests.
 | `APIX_SWEEP_ROUTES` | *(all 24)* | you want a sweep to cover only e.g. `DEL-BOM,DEL-MAA` |
 | `APIX_SWEEP_LEAD_TIMES` | `1,7,30` | you want different advance-booking windows |
 | `APIX_COLLECTOR_ENABLED` | auto (`0` on Vercel) | leave alone on Vercel — a background loop cannot survive there. Set `1` only on Docker/VM deployments |
-| `APIX_DATA_DIR` | auto (`/tmp/apix-data` on Vercel) | only used when there is no `DATABASE_URL` |
+| `APIX_DATA_DIR` | auto (`/tmp/apix-data` on Vercel) | used when `DATABASE_URL` is ignored or unset |
 
-**Do not set** `DATABASE_URL` to a MySQL, SQLite, Redis, or `https://…` address —
-anything that is not PostgreSQL is refused on purpose, and the API tells you so
-instead of quietly storing nothing.
+When you enable PostgreSQL, **do not set** `DATABASE_URL` to a MySQL, SQLite,
+Redis, or `https://…` address — anything that is not PostgreSQL is refused on
+purpose. While `APIX_IGNORE_DATABASE_URL=1` (the Vercel default), the value is
+not read, validated or connected to, and the API/UI explicitly label the SQLite
+store as temporary. Switching backends does not migrate existing history.
 
 ---
 
@@ -172,10 +183,10 @@ instead of quietly storing nothing.
 
 | You see | What it means | Fix |
 | --- | --- | --- |
-| `Cannot serve scraped data: the collection store is unavailable. DATABASE_URL must be a PostgreSQL connection URL.` | `DATABASE_URL` is set on Vercel, but it is not a PostgreSQL address (it starts with `https://`, `mysql://`, or is a placeholder) | Replace it with the Supabase URI from Step 3, then **Redeploy** |
+| `Cannot serve scraped data: the collection store is unavailable. DATABASE_URL must be a PostgreSQL connection URL.` | `APIX_IGNORE_DATABASE_URL=0` enables `DATABASE_URL`, but it is not a PostgreSQL address (it starts with `https://`, `mysql://`, or is a placeholder) | Replace it with the Supabase URI from Step 3, or set `APIX_IGNORE_DATABASE_URL=1` for the temporary demo, then **Redeploy** |
 | `… DATABASE_URL is not a valid PostgreSQL DSN.` / `… must specify a database.` | the string was pasted incompletely (usually the `/postgres` database name at the end is missing) | copy the whole URI again, ending in `/postgres?sslmode=require` |
 | `Collection store unavailable: PostgreSQL is configured but could not be reached: OperationalError` | wrong password, wrong host/port, project paused, or you used the IPv6-only direct connection | use the **Transaction pooler** URI (port `6543`), re-check the password, and make sure the Supabase project is *Active* (free projects pause after ~1 week idle — open the Supabase dashboard to restore) |
-| `/api/health` shows `"store_backend": "sqlite"` and the Live Feed shows an amber **Ephemeral collection store (serverless /tmp)** banner | `DATABASE_URL` is not set at all | Works for a demo, but data resets on cold start. Do Step 3 for durability |
+| `/api/health` shows `"store_backend": "sqlite"` and the Live Feed shows an amber **Ephemeral collection store (serverless /tmp)** banner | `DATABASE_URL` is ignored (the Vercel default) or unset | Works for a demo, but data resets on cold start. For durability, set both `APIX_IGNORE_DATABASE_URL=0` and the PostgreSQL URI from Step 3, then redeploy |
 | `409 No collection adapter is enabled` | `APIX_COLLECTOR_SOURCES` was set to something empty or misspelled | set it to `fixture` (or delete the variable — `fixture` is the default) |
 | The switch flips back to **Demo data** by itself, with a note that the store is empty | live mode was asked for but nothing has been collected yet | press **Run sweep now** once; the switch then stays on Scraper |
 | Everything says *demo* and the switch shows **locked** | `APIX_DATA_MODE` is set on Vercel | delete that variable (or set it to the mode you want) and redeploy |
@@ -189,8 +200,9 @@ instead of quietly storing nothing.
 > "The collector runs on the same code path everywhere. On Vercel there is no
 > process lifetime between requests, so a sweep runs *inside* the request that
 > asks for it and the result is returned to the dashboard in one round trip.
-> Storage is PostgreSQL on Supabase; without it the engine falls back to a
-> clearly-labelled temporary store rather than pretending to be durable. If a
+> Storage defaults to a clearly-labelled temporary SQLite store on Vercel;
+> with an explicit opt-in and a valid database address it uses PostgreSQL on
+> Supabase for durable history. If a
 > source refuses automated access, the run is recorded as **blocked** and the
 > circuit breaker opens — the engine has no CAPTCHA solving, no fingerprint
 > rotation and no way around a `robots.txt` denial, and that is deliberate:

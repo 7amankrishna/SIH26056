@@ -1,7 +1,7 @@
 """PostgreSQL store integration test (opt-in).
 
-The SQLite store is what the offline demo runs on; PostgreSQL is what a deployed
-instance uses, and the two share one code path with a small SQL translation layer
+The SQLite store is what the offline and Vercel demos run on; PostgreSQL is an
+opt-in for durable history. They share one code path with a small SQL translation layer
 (``Store._connect``). This test exercises that layer against a *real* PostgreSQL
 so a schema or translation regression cannot ship unnoticed.
 
@@ -53,6 +53,7 @@ def pg_store(monkeypatch):
     conn.close()
 
     monkeypatch.setenv("DATABASE_URL", DATABASE_URL)
+    monkeypatch.setenv("APIX_IGNORE_DATABASE_URL", "0")
     previous = store_module._store
     store_module._store = None
     store = Store()  # also runs the app's own IF NOT EXISTS bootstrap on top
