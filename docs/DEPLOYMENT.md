@@ -108,9 +108,16 @@ consequences are worth knowing before a demo:
 
 - **Serverless filesystems are ephemeral and usually read-only.** On Vercel, set
   `APIX_DATA_DIR=/tmp/apix-data` so SQLite can write, and treat collected data as
-  per-instance and per-deploy. For durable storage move the same three tables
-  (`collection_runs`, `raw_payloads`, `observations`) to Postgres — the store is a
-  thin wrapper, so this is one module.
+  per-instance and per-deploy (if the configured directory is read-only the store
+  falls back to `/tmp/apix-data` on its own and logs that it did). For durable
+  storage set `DATABASE_URL` to a managed Postgres — see
+  [Moving to PostgreSQL](#moving-to-postgresql).
+- **The store initialises lazily.** Nothing touches the database at import time:
+  the first request that needs it creates the schema. A bad `DATABASE_URL` (the
+  classic slip is pasting the repo's GitHub URL) therefore no longer crashes the
+  function — `/api/health`, the docs and the demo dataset keep working, and the
+  routes that need the store answer `503 {"error": "database_misconfigured"}`
+  with a message that says exactly what to fix.
 - **The toggle is server state, not browser state.** If a reproducible demo number
   matters, pin it with `APIX_DATA_MODE=demo`; otherwise a live mode left on by an
   earlier run will serve a thin, correctly-labelled-but-different index.
@@ -133,16 +140,27 @@ Frontend:
 
 ## Moving to PostgreSQL
 
-The engine is written against a simple observation-store interface so a
-PostgreSQL-backed store can be swapped in. Use a managed Postgres (e.g. Neon or
-Supabase) since Vercel Functions have no persistent local filesystem. The
-migration path:
+The store (`backend/app/collect/store.py`) speaks SQLite by default and Postgres
+when `DATABASE_URL` is set — same tables, same code path. Use a managed Postgres
+(e.g. Neon or Supabase) since Vercel Functions have no persistent local
+filesystem.
 
-1. Add SQLAlchemy models matching [Data Dictionary](DATA_DICTIONARY.md).
-2. Implement store functions returning the same shapes the engine expects.
-3. Add indexes on `collection_timestamp`, `route`, `departure_date`, `source`,
-   `airline`, `lead_time_days`.
-4. Store raw payloads as JSONB, never loaded in analytical queries.
+```
+DATABASE_URL=postgresql://USER:PASSWORD@HOST:5432/DBNAME?sslmode=require
+```
+
+Rules of the road:
+
+- The value must be a PostgreSQL DSN (`postgresql://…`, `postgres://…` or libpq
+  `host=… dbname=…` form). Anything else — a GitHub URL, a MySQL/SQLite URL, an
+  empty scheme — is rejected with a clear `RuntimeError` **before** it reaches
+  `psycopg2`; on Vercel a host is mandatory.
+- The driver is `psycopg2-binary==2.9.10`, pinned in both `api/requirements.txt`
+  (what Vercel installs) and `backend/requirements.txt` (Docker / local).
+- Connections use a `connect_timeout` of 10 s unless the DSN sets its own
+  (override with `APIX_PG_CONNECT_TIMEOUT_SECONDS`), so an unreachable database
+  fails fast instead of hanging a request until the function times out.
+- Unset `DATABASE_URL` to fall back to SQLite.
 
 ## Production notes
 

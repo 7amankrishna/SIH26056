@@ -16,12 +16,13 @@ import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from .collect import collection_service
+from .collect.store import DatabaseConfigError
 from .config import settings
 from .dataset import get_dataset
 from .routers import api, collect
@@ -63,6 +64,22 @@ app.add_middleware(
 
 app.include_router(api.router, prefix=settings.api_prefix)
 app.include_router(collect.router, prefix=settings.api_prefix)
+
+
+@app.exception_handler(DatabaseConfigError)
+async def _database_config_error(_: Request, exc: DatabaseConfigError) -> JSONResponse:
+    """A bad ``DATABASE_URL`` is an operator error: say so instead of a bare 500.
+
+    The store is initialised lazily, so this fires on the first request that
+    needs the database — the rest of the app (health, docs, demo data, the SPA)
+    keeps working while the environment variable gets fixed.
+    """
+    print(f"[apix] database configuration error: {exc}")
+    return JSONResponse(
+        status_code=503,
+        content={"detail": str(exc), "error": "database_misconfigured"},
+        headers={"Retry-After": "60"},
+    )
 
 
 @app.get(settings.api_prefix + "/health", tags=["Health"])
