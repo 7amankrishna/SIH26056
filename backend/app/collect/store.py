@@ -1,7 +1,7 @@
-"""SQLite persistence for collected data.
+"""SQLite and Postgres persistence for collected data.
 
-Stdlib ``sqlite3`` on purpose: no service to provision, works on a laptop
-offline, and the file itself is the audit artifact. Three tables:
+Stdlib ``sqlite3`` on purpose for local: no service to provision, works on a laptop
+offline. Postgres via psycopg2 for Vercel/production. Three tables:
 
     collection_runs   one row per sweep per source, incl. blocked/failed runs
     raw_payloads      the payload *exactly as received* (never rewritten)
@@ -9,15 +9,11 @@ offline, and the file itself is the audit artifact. Three tables:
 
 Plus ``apix_state`` — a tiny KV table that persists the dashboard's data-source
 toggle so the selection survives a restart.
-
-Writes are serialized through one lock; reads open short-lived connections. At
-this scale (a few hundred rows per sweep) that is simpler and safer than a
-connection pool. The schema is versioned so a deployed store can be migrated
-instead of deleted.
 """
 
 from __future__ import annotations
 
+import os
 import datetime as dt
 import json
 import sqlite3
@@ -26,6 +22,12 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable, Optional
+
+try:
+    import psycopg2
+    import psycopg2.extras
+except ImportError:
+    psycopg2 = None
 
 from ..config import settings
 
@@ -106,19 +108,14 @@ CREATE TABLE IF NOT EXISTS apix_state (
 );
 """
 
-
-# `observation_id` is declared explicitly above (it carries the UNIQUE
-# constraint), so the generated block starts after it.
 _OBS_DDL = ",\n    ".join(
     f"{c} " + ("REAL" if c in _NUMERIC_COLS else "INTEGER" if c in _INT_COLS else "TEXT")
     for c in OBS_COLUMNS[1:]
 )
 _SCHEMA = _SCHEMA_TMPL.replace("__OBS_COLUMNS__", _OBS_DDL)
 
-
 def _now() -> str:
     return dt.datetime.now(dt.timezone(dt.timedelta(hours=5, minutes=30))).isoformat(timespec="seconds")
-
 
 @dataclass
 class StoredRun:
@@ -161,31 +158,71 @@ class StoredRun:
             "trigger": self.trigger,
         }
 
-
 class Store:
-    """Thread-safe SQLite store for the collection pipeline."""
-
     def __init__(self, path: Optional[Path] = None):
-        self.path = Path(path or settings.data_dir / "apix.sqlite3")
-        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self.db_url = os.environ.get("DATABASE_URL")
+        if self.db_url:
+            if not psycopg2:
+                raise RuntimeError("DATABASE_URL is set but psycopg2-binary is not installed.")
+            self.path = None
+        else:
+            self.path = Path(path or settings.data_dir / "apix.sqlite3")
+            self.path.parent.mkdir(parents=True, exist_ok=True)
         self._write_lock = threading.Lock()
         self._init()
 
-    # ------------------------------------------------------------------ #
     @contextmanager
     def _connect(self):
-        conn = sqlite3.connect(str(self.path), timeout=20.0, check_same_thread=False)
-        conn.row_factory = sqlite3.Row
-        try:
-            conn.execute("PRAGMA journal_mode=WAL")
-            conn.execute("PRAGMA busy_timeout=20000")
-            yield conn
-        finally:
+        if self.db_url:
+            conn = psycopg2.connect(self.db_url)
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                class PseudoConn:
+                    def execute(self, q, args=()):
+                        q = q.replace("?", "%s")
+                        q = q.replace("INSERT OR IGNORE", "INSERT")
+                        if "INSERT INTO observations" in q:
+                            q += " ON CONFLICT DO NOTHING"
+                        # special SQLite date logic
+                        q = q.replace("date(collection_date) <= date(%s)", "CAST(collection_date AS DATE) <= CAST(%s AS DATE)")
+                        q = q.replace("date(collection_date) >= date(%s, '-' || %s || ' day')", "CAST(collection_date AS DATE) >= CAST(%s AS DATE) - CAST(%s || ' days' AS INTERVAL)")
+                        q = q.replace("date(collection_date) >= date(%s)", "CAST(collection_date AS DATE) >= CAST(%s AS DATE)")
+                        cur.execute(q, args)
+                        return cur
+                    def executemany(self, q, args_list):
+                        q = q.replace("?", "%s")
+                        q = q.replace("INSERT OR IGNORE", "INSERT")
+                        if "INSERT INTO observations" in q:
+                            q += " ON CONFLICT DO NOTHING"
+                        cur.executemany(q, args_list)
+                        return cur
+                    def commit(self): conn.commit()
+                    def close(self): conn.close()
+                    def executescript(self, q):
+                        for stmt in q.split(";"):
+                            if stmt.strip():
+                                cur.execute(stmt)
+                        return cur
+                yield PseudoConn()
             conn.close()
+        else:
+            conn = sqlite3.connect(str(self.path), timeout=20.0, check_same_thread=False)
+            conn.row_factory = sqlite3.Row
+            try:
+                conn.execute("PRAGMA journal_mode=WAL")
+                conn.execute("PRAGMA busy_timeout=20000")
+                yield conn
+            finally:
+                conn.close()
 
     def _init(self) -> None:
         with self._write_lock, self._connect() as conn:
-            conn.executescript(_SCHEMA)
+            schema = _SCHEMA
+            if self.db_url:
+                schema = schema.replace("INTEGER PRIMARY KEY AUTOINCREMENT", "SERIAL PRIMARY KEY")
+                conn.executescript(schema)
+            else:
+                conn.executescript(schema)
+            
             cur = conn.execute("SELECT value FROM schema_meta WHERE key='version'")
             row = cur.fetchone()
             if row is None:
@@ -193,15 +230,11 @@ class Store:
             conn.commit()
 
     def reset(self) -> None:
-        """Drop all collected data (used by tests and the 'clear store' action)."""
         with self._write_lock, self._connect() as conn:
             for t in ("collection_runs", "raw_payloads", "observations", "apix_state"):
-                conn.execute(f"DELETE FROM {t}")  # noqa: S608 - fixed table list
+                conn.execute(f"DELETE FROM {t}")  # noqa: S608
             conn.commit()
 
-    # ------------------------------------------------------------------ #
-    # KV state (the dashboard toggle lives here)
-    # ------------------------------------------------------------------ #
     def get_state(self, key: str, default: Optional[str] = None) -> Optional[str]:
         with self._connect() as conn:
             row = conn.execute("SELECT value FROM apix_state WHERE key=?", (key,)).fetchone()
@@ -216,9 +249,6 @@ class Store:
             )
             conn.commit()
 
-    # ------------------------------------------------------------------ #
-    # Runs
-    # ------------------------------------------------------------------ #
     def begin_run(self, run_id: str, source: str, trigger: str) -> None:
         with self._write_lock, self._connect() as conn:
             conn.execute(
@@ -242,7 +272,7 @@ class Store:
         vals.append(_now())
         vals.append(run_id)
         with self._write_lock, self._connect() as conn:
-            conn.execute(f"UPDATE collection_runs SET {', '.join(sets)} WHERE run_id=?", vals)
+            conn.execute(f"UPDATE collection_runs SET {', '.join(sets)} WHERE run_id=?", tuple(vals))
             conn.commit()
 
     def recent_runs(self, limit: int = 20, source: Optional[str] = None) -> list[dict[str, Any]]:
@@ -254,7 +284,7 @@ class Store:
         q += " ORDER BY started_at DESC, id DESC LIMIT ?"
         args.append(limit)
         with self._connect() as conn:
-            rows = conn.execute(q, args).fetchall()
+            rows = conn.execute(q, tuple(args)).fetchall()
         out = []
         for r in rows:
             d = {k: r[k] for k in r.keys()}
@@ -266,9 +296,6 @@ class Store:
         runs = self.recent_runs(limit=1, source=source)
         return runs[0] if runs else None
 
-    # ------------------------------------------------------------------ #
-    # Raw payloads — stored verbatim, exactly as received
-    # ------------------------------------------------------------------ #
     def add_raw_payloads(self, run_id: str, offers: Iterable[Any]) -> int:
         rows = [
             (
@@ -304,7 +331,7 @@ class Store:
         q += " ORDER BY id DESC LIMIT ?"
         args.append(limit)
         with self._connect() as conn:
-            rows = conn.execute(q, args).fetchall()
+            rows = conn.execute(q, tuple(args)).fetchall()
         out = []
         for r in rows:
             d = {k: r[k] for k in r.keys()}
@@ -319,9 +346,6 @@ class Store:
             out.append(d)
         return out
 
-    # ------------------------------------------------------------------ #
-    # Observations
-    # ------------------------------------------------------------------ #
     def insert_observations(self, run_id: str, obs: list[dict[str, Any]]) -> int:
         if not obs:
             return 0
@@ -334,15 +358,13 @@ class Store:
         placeholders = ",".join(["?"] * (len(OBS_COLUMNS) + 3))
         cols = "run_id," + ",".join(OBS_COLUMNS) + ",in_basket,inserted_at"
         with self._write_lock, self._connect() as conn:
-            conn.execute("BEGIN")
+            if not self.db_url:
+                conn.execute("BEGIN")
             cur = conn.executemany(
                 f"INSERT OR IGNORE INTO observations({cols}) VALUES({placeholders})",
                 rows,
             )
             conn.commit()
-            # rowcount is the number actually written; IGNOREd rows are the
-            # observation ids we already hold. Returned so the run log can say
-            # "collected N, stored M" instead of pretending they are the same.
             return max(0, cur.rowcount)
 
     def fingerprints_for_day(self, collection_date: str) -> set[str]:
@@ -353,7 +375,6 @@ class Store:
         return {r["fingerprint"] for r in rows if r["fingerprint"]}
 
     def route_median_levels(self, before_date: str, window_days: int = 7) -> dict[str, float]:
-        """Median valid fare per route over the trailing window — outlier ref."""
         with self._connect() as conn:
             rows = conn.execute(
                 """
@@ -387,7 +408,7 @@ class Store:
             q += " WHERE " + " AND ".join(cond)
         q += " ORDER BY collection_date, id"
         with self._connect() as conn:
-            rows = conn.execute(q, args).fetchall()
+            rows = conn.execute(q, tuple(args)).fetchall()
         out = []
         for r in rows:
             d = {k: r[k] for k in r.keys()}
@@ -410,9 +431,9 @@ class Store:
                 r["quality_status"]: r["c"]
                 for r in conn.execute(
                     "SELECT quality_status, COUNT(*) c FROM observations GROUP BY quality_status"
-                )
+                ).fetchall()
             }
-        size = self.path.stat().st_size if self.path.exists() else 0
+        size = self.path.stat().st_size if (self.path and self.path.exists()) else 0
         return {
             "observations": obs,
             "valid_observations": valid,
@@ -421,7 +442,7 @@ class Store:
             "days_collected": days,
             "by_status": statuses,
             "db_bytes": size,
-            "db_path": str(self.path),
+            "db_path": str(self.path) if self.path else "postgres",
         }
 
     def sources_seen(self) -> list[str]:
@@ -429,16 +450,12 @@ class Store:
             rows = conn.execute("SELECT DISTINCT source FROM observations ORDER BY source").fetchall()
         return [r["source"] for r in rows]
 
-
 def _sha(payload: Any) -> str:
     import hashlib
-
     return hashlib.sha256(json.dumps(payload, sort_keys=True, ensure_ascii=False).encode()).hexdigest()[:16]
-
 
 _store: Optional[Store] = None
 _store_lock = threading.Lock()
-
 
 def get_store() -> Store:
     global _store
