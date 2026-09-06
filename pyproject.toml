@@ -1,5 +1,0 @@
-# Explicit Vercel entrypoint for the FastAPI app.
-# Vercel auto-detects `app` exported from `api/index.py`, but declaring it here
-# removes any ambiguity about which module is the FastAPI application.
-[tool.vercel]
-entrypoint = "api.index:app"
