@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import { ChartCard } from "../components/ChartCard";
 import { DataBoundary } from "../components/DataState";
+import { StoreHealthBanner, SweepTimingChip } from "../components/StoreHealth";
 import { StatusPill } from "../components/badges";
 import { KpiCard } from "../components/KpiCard";
 import { useCollectFares, useCollectPolicy, useCollectRuns, useCollectStatus, useRawPayloads } from "../hooks/useApi";
@@ -41,7 +42,19 @@ type TabId = (typeof TABS)[number]["id"];
 export default function LiveFeed() {
   const [tab, setTab] = useState<TabId>("fares");
   const [selected, setSelected] = useState<string | null>(null);
-  const { mode, effectiveMode, isLive, collecting, setMode, collectNow, daysCollected } = useDataSource();
+  const {
+    mode,
+    effectiveMode,
+    isLive,
+    collecting,
+    setMode,
+    collectNow,
+    daysCollected,
+    requestScoped,
+    storeNote,
+    actionError,
+    lastSweep,
+  } = useDataSource();
 
   const statusQ = useCollectStatus();
   const runsQ = useCollectRuns(30);
@@ -79,7 +92,7 @@ export default function LiveFeed() {
               <span className={`chip ${isLive ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}>
                 {isLive ? "serving scraped data" : "serving demo data"}
               </span>
-              {status?.background_running && (
+              {status?.background_running ? (
                 <span className="chip bg-sky-50 text-sky-700" title={`Next scheduled sweep in ≤ ${status.sweep_interval_seconds}s`}>
                   <span className="relative flex h-1.5 w-1.5">
                     <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-sky-400 opacity-75" />
@@ -87,6 +100,8 @@ export default function LiveFeed() {
                   </span>
                   scheduler on · every {Math.round(status.sweep_interval_seconds / 60)}m
                 </span>
+              ) : (
+                <SweepTimingChip requestScoped={requestScoped} />
               )}
             </div>
             <p className="mt-1 max-w-2xl text-xs text-ink-500">
@@ -117,7 +132,7 @@ export default function LiveFeed() {
         </div>
 
         <div className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
-          <KpiCard label="Observations stored" value={(store?.observations ?? 0).toLocaleString("en-IN")} sub="all rows in SQLite, incl. rejected" />
+          <KpiCard label="Observations stored" value={(store?.observations ?? 0).toLocaleString("en-IN")} sub="all rows in the store, incl. rejected" />
           <KpiCard
             label="Index-eligible"
             value={(store?.valid_observations ?? 0).toLocaleString("en-IN")}
@@ -127,10 +142,18 @@ export default function LiveFeed() {
           <KpiCard label="Days collected" value={String(daysCollected || store?.days_collected || 0)} sub="each sweep adds one day" />
         </div>
 
-        {status?.last_sweep_error && (
+        <StoreHealthBanner store={store} note={storeNote} className="mt-3" />
+
+        {(status?.last_sweep_error || actionError) && (
           <div className="mt-3 flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 p-3 text-xs text-red-700">
             <Ban className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-            <span className="font-mono">{status.last_sweep_error}</span>
+            <span className="font-mono">{actionError ?? status?.last_sweep_error}</span>
+          </div>
+        )}
+
+        {lastSweep?.note && (
+          <div className="mt-3 rounded-lg border border-ink-200 bg-ink-50 p-3 text-[11px] leading-relaxed text-ink-600">
+            {lastSweep.note}
           </div>
         )}
       </div>

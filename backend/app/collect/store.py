@@ -35,8 +35,16 @@ from ..config import settings
 SCHEMA_VERSION = 1
 
 
-class StoreConfigurationError(RuntimeError):
+class StoreError(RuntimeError):
+    """Base class for store failures the API reports instead of crashing on."""
+
+
+class StoreConfigurationError(StoreError):
     """Raised when the deployment database configuration is unsafe or unusable."""
+
+
+class StoreConnectionError(StoreError):
+    """Raised when a configured database exists but cannot be reached."""
 
 
 def _production_environment() -> bool:
@@ -47,6 +55,13 @@ def _production_environment() -> bool:
         os.getenv(name, "").strip().lower() in {"production", "prod"}
         for name in ("APIX_ENV", "APP_ENV", "ENVIRONMENT", "PYTHON_ENV")
     )
+
+
+EPHEMERAL_STORE_NOTE = (
+    "Ephemeral serverless store: SQLite under the only writable path (/tmp), so collected "
+    "data is per-instance and is lost on a cold start or redeploy. Set DATABASE_URL to a "
+    "PostgreSQL database for durable collection history."
+)
 
 
 def validate_database_url(value: str) -> str:
@@ -208,35 +223,152 @@ class StoredRun:
             "trigger": self.trigger,
         }
 
+
+# --------------------------------------------------------------------------- #
+# Degraded mode: a store that could not be configured answers every read with an
+# empty result and swallows every write, so one missing DATABASE_URL cannot take
+# the whole API down with it. `counts()` still says *why*, and the UI shows it.
+# --------------------------------------------------------------------------- #
+
+
+class _NullRow(dict):
+    """Row-shaped object that reports 0/None for any column asked of it."""
+
+    def __missing__(self, key: str) -> Any:  # noqa: D105
+        return 0
+
+
+class _NullCursor:
+    rowcount = 0
+
+    def fetchone(self) -> _NullRow:
+        # Empty-but-row-shaped: `COUNT(*)` reads answer 0 and truthiness stays
+        # False, so `get_state()` still returns its default.
+        return _NullRow()
+
+    def fetchall(self) -> list[Any]:
+        return []
+
+    def keys(self) -> list[str]:
+        return []
+
+
+class _NullConnection:
+    def execute(self, q: str, args: Any = ()) -> _NullCursor:
+        return _NullCursor()
+
+    def executemany(self, q: str, args_list: Any) -> _NullCursor:
+        return _NullCursor()
+
+    def executescript(self, q: str) -> _NullCursor:
+        return _NullCursor()
+
+    def commit(self) -> None:
+        return None
+
+    def close(self) -> None:
+        return None
+
+
 class Store:
+    """Persistence for the collection engine.
+
+    Construction never takes the API down: a deployment whose database is not
+    configured (or whose filesystem is read-only) yields an *unavailable* store
+    that answers every read with an empty result and every write with a no-op,
+    and says why in :meth:`counts`. Endpoints then report a clear 503/``note``
+    instead of an opaque 500 on every screen — a broken scraper must degrade the
+    scraper, not the dashboard.
+    """
+
     def __init__(self, path: Optional[Path] = None):
+        self._write_lock = threading.Lock()
+        self._unavailable_reason: Optional[str] = None
+        #: True when SQLite is standing in for durable storage on a hosted runtime.
+        self.ephemeral = False
+        self.db_url: Optional[str] = None
+        self.path: Optional[Path] = None
+        self.backend = "sqlite"
+        try:
+            self._configure(path)
+        except StoreConfigurationError as exc:
+            # Fail closed (nothing is written anywhere) but stay up: the reason is
+            # surfaced through the API instead of as an unhandled exception.
+            self._unavailable_reason = str(exc)
+            self.backend = "unavailable"
+            return
+        self._init()
+
+    def _configure(self, path: Optional[Path]) -> None:
         configured_url = os.environ.get("DATABASE_URL", "").strip()
         if configured_url:
+            # Still fail closed on a DATABASE_URL we would not dare to use: a
+            # mis-pointed connection string must never silently become SQLite.
             self.db_url = validate_database_url(configured_url)
             self.backend = "postgresql"
-        elif _production_environment():
-            raise StoreConfigurationError(
-                "DATABASE_URL is required in production; SQLite is local-development only."
-            )
-        else:
-            self.db_url = None
-            self.backend = "sqlite"
-        if self.db_url:
             if not psycopg2:
                 raise StoreConfigurationError(
                     "DATABASE_URL is configured but psycopg2-binary is not installed."
                 )
-            self.path = None
-        else:
-            self.path = Path(path or settings.data_dir / "apix.sqlite3")
-            self.path.parent.mkdir(parents=True, exist_ok=True)
-        self._write_lock = threading.Lock()
-        self._init()
+            return
+
+        self.backend = "sqlite"
+        # On a hosted/serverless runtime SQLite is allowed, but only as an
+        # explicitly labelled ephemeral store: it lives under the one writable
+        # path and is thrown away with the instance.
+        self.ephemeral = _production_environment()
+        candidate = Path(path or settings.data_dir / "apix.sqlite3")
+        try:
+            candidate.parent.mkdir(parents=True, exist_ok=True)
+            probe = candidate.parent / ".apix-write-probe"
+            probe.write_text("ok", encoding="utf-8")
+            probe.unlink()
+        except OSError as exc:
+            raise StoreConfigurationError(
+                f"SQLite collection store is not writable at {candidate} ({type(exc).__name__}: {exc}). "
+                "Set APIX_DATA_DIR to a writable path (on Vercel: /tmp/apix-data) or DATABASE_URL "
+                "to a PostgreSQL database."
+            ) from exc
+        self.path = candidate
+
+    # -- availability ----------------------------------------------------- #
+    @property
+    def available(self) -> bool:
+        """False when no database could be configured at all."""
+        return self._unavailable_reason is None
+
+    @property
+    def unavailable_reason(self) -> Optional[str]:
+        return self._unavailable_reason
+
+    @property
+    def durable(self) -> bool:
+        """Only Postgres survives a redeploy; SQLite on serverless does not."""
+        return self.backend == "postgresql"
+
+    @property
+    def note(self) -> Optional[str]:
+        if not self.available:
+            return f"Collection store unavailable — {self._unavailable_reason}"
+        if self.ephemeral:
+            return EPHEMERAL_STORE_NOTE
+        return None
 
     @contextmanager
     def _connect(self):
+        if not self.available:
+            yield _NullConnection()
+            return
         if self.db_url:
-            conn = psycopg2.connect(self.db_url)
+            try:
+                conn = psycopg2.connect(
+                    self.db_url,
+                    connect_timeout=int(os.getenv("APIX_DB_CONNECT_TIMEOUT_SECONDS", "5")),
+                )
+            except Exception as exc:  # never echo the DSN (it carries credentials)
+                raise StoreConnectionError(
+                    f"PostgreSQL is configured but could not be reached: {type(exc).__name__}"
+                ) from exc
             with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
                 class PseudoConn:
                     def execute(self, q, args=()):
@@ -267,7 +399,10 @@ class Store:
                 yield PseudoConn()
             conn.close()
         else:
-            conn = sqlite3.connect(str(self.path), timeout=20.0, check_same_thread=False)
+            try:
+                conn = sqlite3.connect(str(self.path), timeout=20.0, check_same_thread=False)
+            except sqlite3.Error as exc:
+                raise StoreConnectionError(f"SQLite store at {self.path} could not be opened: {exc}") from exc
             conn.row_factory = sqlite3.Row
             try:
                 conn.execute("PRAGMA journal_mode=WAL")
@@ -369,6 +504,8 @@ class Store:
             for o in offers
         ]
         if not rows:
+            return 0
+        if not self.available:
             return 0
         with self._write_lock, self._connect() as conn:
             conn.executemany(
@@ -504,7 +641,14 @@ class Store:
             "days_collected": days,
             "by_status": statuses,
             "db_bytes": size,
-            "db_path": str(self.path) if self.path else "postgres",
+            "db_path": str(self.path) if self.path else self.backend,
+            # Storage health, so the API/UI can say what the scraper can persist.
+            "available": self.available,
+            "backend": self.backend,
+            "durable": self.durable,
+            "ephemeral": self.ephemeral,
+            "unavailable_reason": self._unavailable_reason,
+            "note": self.note,
         }
 
     def sources_seen(self) -> list[str]:

@@ -23,8 +23,46 @@ def _env_list(name: str, default: str) -> list[str]:
     return [x.strip() for x in raw.split(",") if x.strip()]
 
 
+def _request_scoped_runtime() -> bool:
+    """True on serverless platforms where a background loop cannot survive.
+
+    Vercel/Lambda-style runtimes freeze or destroy the process the moment a
+    response is returned, so an ``asyncio`` sweep loop never gets to run: the
+    collector has to do its work *inside* the request that asks for it. Detecting
+    that here keeps the rest of the code free of platform special cases.
+    """
+    return any(
+        _env(name, "").strip()
+        for name in (
+            "VERCEL",
+            "VERCEL_ENV",
+            "AWS_LAMBDA_FUNCTION_NAME",
+            "LAMBDA_TASK_ROOT",
+            "FUNCTION_TARGET",
+        )
+    )
+
+
+def _default_data_dir() -> str:
+    """Where collected data lives unless ``APIX_DATA_DIR`` says otherwise.
+
+    Serverless filesystems are read-only except ``/tmp``, so the default there is
+    ``/tmp/apix-data`` — otherwise the store cannot be created at all and the
+    scraper looks "broken" while every other screen works normally.
+    """
+    explicit = _env("APIX_DATA_DIR", "").strip()
+    if explicit:
+        return explicit
+    if _request_scoped_runtime():
+        return "/tmp/apix-data"
+    return str(Path(__file__).resolve().parents[1] / "data")
+
+
 class Settings:
     """Runtime settings for the APIx backend."""
+
+    #: True when the process only lives for the duration of a request.
+    request_scoped_runtime: bool = _request_scoped_runtime()
 
     title: str = "APIx — Real-Time Airfare Price Index for India"
     version: str = "0.2.0"
@@ -57,12 +95,17 @@ class Settings:
     forced_data_mode: str = _env("APIX_DATA_MODE", "").strip().lower()
 
     # Where collected observations, raw payloads and run logs are persisted.
-    # Kept out of git (see .gitignore) so deployed instances start clean.
-    data_dir: Path = Path(_env("APIX_DATA_DIR", str(Path(__file__).resolve().parents[1] / "data")))
+    # Kept out of git (see .gitignore) so deployed instances start clean. On a
+    # serverless runtime this defaults to /tmp/apix-data (the only writable path).
+    data_dir: Path = Path(_default_data_dir())
 
     # Master switch for the background loop. When false, the API still serves
-    # everything already stored, but no new collection runs are scheduled.
-    collector_enabled: bool = _env_bool("APIX_COLLECTOR_ENABLED", "1")
+    # everything already stored, but no new collection runs are scheduled —
+    # sweeps then happen inside the request that asks for them, which is the only
+    # thing that works on a request-scoped runtime (default off there).
+    collector_enabled: bool = _env_bool(
+        "APIX_COLLECTOR_ENABLED", "0" if _request_scoped_runtime() else "1"
+    )
 
     # Seconds between scheduled sweeps.
     sweep_interval_seconds: int = int(_env("APIX_SWEEP_INTERVAL_SECONDS", "900"))
@@ -107,6 +150,13 @@ class Settings:
 
     # Max requests issued per sweep per source (hard politeness ceiling).
     max_requests_per_sweep: int = int(_env("APIX_MAX_REQUESTS_PER_SWEEP", "120"))
+
+    # Wall-clock budget for a sweep that has to finish *inside* one HTTP request
+    # (serverless, or any deployment with the background loop off). Only used to
+    # size the sweep when politeness delays would otherwise blow the platform's
+    # function timeout; offline/in-process sources cost no wall-clock time and
+    # are never truncated. Keep it below the function's maxDuration.
+    request_sweep_budget_seconds: float = float(_env("APIX_REQUEST_SWEEP_BUDGET_SECONDS", "45"))
 
 
 settings = Settings()

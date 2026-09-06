@@ -10,7 +10,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../lib/api";
-import type { DataMode, StoreCounts } from "../lib/types";
+import type { DataMode, StoreCounts, SweepResult } from "../lib/types";
 
 const URL_PARAM = "source";
 
@@ -30,6 +30,16 @@ interface DataSourceValue {
   counts?: StoreCounts;
   daysCollected: number;
   lastSweepError?: string | null;
+  /** No background loop survives on this runtime: a sweep runs inside the request. */
+  requestScoped: boolean;
+  /** false when the deployment has no usable database — scraping cannot persist. */
+  storeAvailable: boolean;
+  /** Storage caveat to show verbatim (ephemeral /tmp store, missing DATABASE_URL…). */
+  storeNote?: string | null;
+  /** Why the last toggle or sweep failed, if it did. */
+  actionError?: string | null;
+  /** Result of the last sweep this browser triggered. */
+  lastSweep?: SweepResult | null;
   setMode: (mode: DataMode) => void;
   toggle: () => void;
   collectNow: () => void;
@@ -38,9 +48,27 @@ interface DataSourceValue {
 
 const Ctx = createContext<DataSourceValue | null>(null);
 
+const ANALYTICAL_KEYS = [
+  "overview",
+  "trend",
+  "routes",
+  "airlines",
+  "leadtime",
+  "distribution",
+  "quality",
+  "collection-runs",
+  "stats-overview",
+  "health",
+  "collect-fares",
+  "collect-runs",
+  "collect-payloads",
+];
+
 export function DataSourceProvider({ children }: { children: ReactNode }) {
   const qc = useQueryClient();
   const [collecting, setCollecting] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [lastSweep, setLastSweep] = useState<SweepResult | null>(null);
 
   const statusQ = useQuery({
     queryKey: ["collect-status"],
@@ -63,11 +91,20 @@ export function DataSourceProvider({ children }: { children: ReactNode }) {
   const setModeMutation = useMutation({
     mutationFn: (next: DataMode) => api.setDataSource(next),
     onSuccess: () => {
+      setActionError(null);
+      // On a request-scoped runtime the backend sweeps *inside* this POST, so by
+      // the time it answers, the analytical screens have new data to show.
       qc.invalidateQueries({ queryKey: ["data-source"] });
       qc.invalidateQueries({ queryKey: ["collect-status"] });
       // Every analytical screen changes when the source changes.
-      ["overview", "trend", "routes", "airlines", "leadtime", "distribution", "quality", "collection-runs", "stats-overview", "health"]
-        .forEach((k) => qc.invalidateQueries({ queryKey: [k] }));
+      ANALYTICAL_KEYS.forEach((k) => qc.invalidateQueries({ queryKey: [k] }));
+    },
+    onError: (err: unknown) => {
+      // A refused switch must be visible: silently staying on demo data looks
+      // exactly like a broken toggle.
+      setActionError(err instanceof Error ? err.message : String(err));
+      qc.invalidateQueries({ queryKey: ["data-source"] });
+      qc.invalidateQueries({ queryKey: ["collect-status"] });
     },
   });
 
@@ -83,36 +120,66 @@ export function DataSourceProvider({ children }: { children: ReactNode }) {
     [setModeMutation],
   );
 
+  // Serverless runtimes freeze the process the moment a response is returned, so
+  // there is no background loop to finish a queued sweep. The backend says which
+  // world we are in; when it is request-scoped we await the sweep itself.
+  const requestScoped =
+    statusQ.data?.request_scoped_sweeps ?? !(statusQ.data?.background_running ?? true);
+
   const collectNow = useCallback(() => {
     setCollecting(true);
+    setActionError(null);
     // Promise.resolve() + try/catch: a sweep request must never be able to throw
     // synchronously out of a render effect (it would unmount the whole tree).
     try {
-      Promise.resolve(api.runSweepBackground())
-        .catch(() => undefined)
+      Promise.resolve(requestScoped ? api.runSweep({ wait: true }) : api.runSweepBackground())
+        .then((res) => {
+          if (res && typeof res === "object" && "observations" in res) {
+            const sweep = res as SweepResult;
+            setLastSweep(sweep);
+            if (sweep.error) setActionError(sweep.error);
+          }
+          return undefined;
+        })
+        .catch((err: unknown) => {
+          setActionError(err instanceof Error ? err.message : String(err));
+        })
         .finally(() => {
-          // Poll once quickly so the UI reflects the sweep that just landed.
-          window.setTimeout(() => {
-            qc.invalidateQueries({ queryKey: ["collect-status"] });
-            qc.invalidateQueries({ queryKey: ["data-source"] });
-            setCollecting(false);
-          }, 1500);
+          // A synchronous sweep has already landed; a queued one needs a moment.
+          window.setTimeout(
+            () => {
+              qc.invalidateQueries({ queryKey: ["collect-status"] });
+              qc.invalidateQueries({ queryKey: ["data-source"] });
+              ANALYTICAL_KEYS.forEach((k) => qc.invalidateQueries({ queryKey: [k] }));
+              setCollecting(false);
+            },
+            requestScoped ? 0 : 1500,
+          );
         });
-    } catch {
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : String(err));
       setCollecting(false);
     }
-  }, [qc]);
+  }, [qc, requestScoped]);
 
   // A live toggle with an empty store would be an empty screen; kick a sweep.
   // Skipped when the source is server-locked, since the request would 409.
   useEffect(() => {
-    if (mode === "live" && stateQ.data && !stateQ.data.has_live_data && !stateQ.data.locked && !collecting) {
+    if (
+      mode === "live" &&
+      stateQ.data &&
+      !stateQ.data.has_live_data &&
+      !stateQ.data.locked &&
+      !collecting &&
+      // No store means nothing could ever land; retrying would only spin.
+      stateQ.data.store?.available !== false
+    ) {
       collectNow();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode, stateQ.data?.has_live_data, stateQ.data?.locked]);
+  }, [mode, stateQ.data?.has_live_data, stateQ.data?.locked, stateQ.data?.store?.available]);
 
-  const store = statusQ.data?.store;
+  const store = statusQ.data?.store ?? stateQ.data?.store;
   const value: DataSourceValue = {
     mode,
     effectiveMode: (statusQ.data?.effective_mode ?? stateQ.data?.effective_mode ?? mode) as DataMode,
@@ -126,6 +193,11 @@ export function DataSourceProvider({ children }: { children: ReactNode }) {
     counts: store,
     daysCollected: store?.days_collected ?? 0,
     lastSweepError: statusQ.data?.last_sweep_error ?? null,
+    requestScoped,
+    storeAvailable: store?.available !== false,
+    storeNote: store?.note ?? statusQ.data?.store_note ?? stateQ.data?.store_note ?? null,
+    actionError: actionError ?? (setModeMutation.error instanceof Error ? setModeMutation.error.message : null),
+    lastSweep,
     setMode,
     toggle: () => setMode(mode === "live" ? "demo" : "live"),
     collectNow,

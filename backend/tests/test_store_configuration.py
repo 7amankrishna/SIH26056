@@ -59,21 +59,64 @@ def test_invalid_database_urls_are_rejected(value):
         validate_database_url(value)
 
 
-def test_production_requires_database_url(monkeypatch):
+def test_production_without_database_url_uses_a_labelled_ephemeral_store(monkeypatch, tmp_path):
+    """Serverless has no durable disk, but the scraper must still work.
+
+    The old behaviour raised here, which surfaced as a bare 500 on every
+    collection endpoint (and on /api/health) of the deployed demo. SQLite is now
+    allowed, but only as a store that says out loud that it is ephemeral.
+    """
     monkeypatch.setenv("VERCEL", "1")
-
-    with pytest.raises(StoreConfigurationError, match="DATABASE_URL is required"):
-        Store()
-
-
-def test_production_never_falls_back_to_sqlite(monkeypatch, tmp_path):
-    monkeypatch.setenv("APIX_ENV", "production")
     monkeypatch.setenv("APIX_DATA_DIR", str(tmp_path))
+    monkeypatch.setattr(store_module.settings, "data_dir", tmp_path)
 
-    with pytest.raises(StoreConfigurationError):
-        Store()
+    store = Store()
 
+    assert store.path == tmp_path / "apix.sqlite3"
+    assert store.available is True
+    assert store.backend == "sqlite"
+    assert store.ephemeral is True
+    assert store.durable is False
+    counts = store.counts()
+    assert counts["available"] is True
+    assert counts["ephemeral"] is True
+    assert "DATABASE_URL" in (counts["note"] or "")
+
+
+def test_invalid_database_url_still_fails_closed(monkeypatch, tmp_path):
+    """A mis-pointed DATABASE_URL must never be silently downgraded to SQLite."""
+    monkeypatch.setenv("VERCEL", "1")
+    monkeypatch.setenv("DATABASE_URL", "sqlite:///tmp/apix.sqlite3")
+    monkeypatch.setenv("APIX_DATA_DIR", str(tmp_path))
+    monkeypatch.setattr(store_module.settings, "data_dir", tmp_path)
+
+    store = Store()
+
+    assert store.available is False
+    assert store.backend == "unavailable"
+    assert "PostgreSQL" in (store.unavailable_reason or "")
     assert not list(tmp_path.iterdir())
+
+
+@pytest.mark.skipif(hasattr(os, "geteuid") and os.geteuid() == 0, reason="root ignores directory permissions")
+def test_unwritable_data_dir_degrades_to_an_unavailable_store(monkeypatch, tmp_path):
+    readonly = tmp_path / "readonly"
+    readonly.mkdir()
+    readonly.chmod(0o500)
+    monkeypatch.setenv("APIX_DATA_DIR", str(readonly / "data"))
+    monkeypatch.setattr(store_module.settings, "data_dir", readonly / "data")
+
+    store = Store()
+
+    assert store.available is False
+    assert "not writable" in (store.unavailable_reason or "")
+    # Reads answer empty, writes are no-ops: nothing raises into the API layer.
+    assert store.counts()["observations"] == 0
+    assert store.all_observations() == []
+    assert store.recent_runs() == []
+    assert store.add_raw_payloads("run-1", []) == 0
+    store.set_state("data_mode", "live")
+    assert store.get_state("data_mode") is None
 
 
 def test_sqlite_remains_available_for_local_development(tmp_path):
@@ -132,7 +175,7 @@ class _PostgresBranchConnection:
 def test_postgres_branch_performs_store_crud(monkeypatch):
     connection = _PostgresBranchConnection()
     monkeypatch.setenv("DATABASE_URL", "postgresql://user:password@db.example/app")
-    monkeypatch.setattr(store_module.psycopg2, "connect", lambda _url: connection)
+    monkeypatch.setattr(store_module.psycopg2, "connect", lambda _url, **_kwargs: connection)
 
     store = Store()
     store.set_state("mode", "live")

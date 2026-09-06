@@ -243,7 +243,11 @@ class DataSourceState(ApxModel):
     locked: bool = False
     collector_enabled: bool = False
     background_running: bool = False
+    #: True when no background loop survives, so a sweep runs inside the request.
+    request_scoped_sweeps: bool = False
     store: dict[str, Any] = Field(default_factory=dict)
+    #: Why the store cannot persist (unavailable) or will not persist (ephemeral).
+    store_note: Optional[str] = None
     sources: list[str] = Field(default_factory=list)
     note: Optional[str] = None
     updated_at: Optional[str] = None
