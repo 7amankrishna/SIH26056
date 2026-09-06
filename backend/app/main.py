@@ -43,8 +43,8 @@ async def lifespan(app: FastAPI):
         if not store.available:
             # Scraping is disabled until storage is fixed — say so loudly at boot.
             print(f"[apix] collection store unavailable: {store.unavailable_reason}")
-        elif store.ephemeral:
-            print(f"[apix] collection store is ephemeral ({store.path}); set DATABASE_URL for durable history")
+        elif store.note:
+            print(f"[apix] collection store ({store.path}): {store.note}")
         await collection_service.start()
         if not collection_service.background_running:
             print("[apix] no background collector loop — sweeps run inside the request that asks for them")

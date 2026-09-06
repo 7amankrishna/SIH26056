@@ -1,7 +1,8 @@
 """SQLite and Postgres persistence for collected data.
 
-Stdlib ``sqlite3`` on purpose for local: no service to provision, works on a laptop
-offline. Postgres via psycopg2 for Vercel/production. Three tables:
+Stdlib ``sqlite3`` for local and the Vercel demo: no service to provision, works
+offline. Vercel ignores ``DATABASE_URL`` by default; set
+``APIX_IGNORE_DATABASE_URL=0`` to opt in to Postgres via psycopg2. Three tables:
 
     collection_runs   one row per sweep per source, incl. blocked/failed runs
     raw_payloads      the payload *exactly as received* (never rewritten)
@@ -47,9 +48,13 @@ class StoreConnectionError(StoreError):
     """Raised when a configured database exists but cannot be reached."""
 
 
+def _vercel_environment() -> bool:
+    return any(os.getenv(name, "").strip() for name in ("VERCEL", "VERCEL_ENV"))
+
+
 def _production_environment() -> bool:
     """Detect hosted production contexts without importing application settings."""
-    if os.getenv("VERCEL") or os.getenv("VERCEL_ENV"):
+    if _vercel_environment():
         return True
     return any(
         os.getenv(name, "").strip().lower() in {"production", "prod"}
@@ -57,10 +62,26 @@ def _production_environment() -> bool:
     )
 
 
+def _ignore_database_url() -> bool:
+    """Keep the Vercel demo independent of stale/injected database credentials.
+
+    No Vercel settings change is needed to recover the demo. Operators who want
+    PostgreSQL explicitly set APIX_IGNORE_DATABASE_URL=0; other deployments keep
+    honouring DATABASE_URL by default. An empty flag uses the platform default.
+    """
+    default = "1" if _vercel_environment() else "0"
+    value = os.getenv("APIX_IGNORE_DATABASE_URL", "").strip() or default
+    return value.lower() in {"1", "true", "yes", "on"}
+
+
+POSTGRES_STORE_HINT = (
+    "For durable collection history, set APIX_IGNORE_DATABASE_URL=0 and DATABASE_URL "
+    "to a PostgreSQL database."
+)
 EPHEMERAL_STORE_NOTE = (
     "Ephemeral serverless store: SQLite under the only writable path (/tmp), so collected "
-    "data is per-instance and is lost on a cold start or redeploy. Set DATABASE_URL to a "
-    "PostgreSQL database for durable collection history."
+    "data is per-instance and is lost on a cold start or redeploy. "
+    + POSTGRES_STORE_HINT
 )
 
 
@@ -286,6 +307,7 @@ class Store:
         self._unavailable_reason: Optional[str] = None
         #: True when SQLite is standing in for durable storage on a hosted runtime.
         self.ephemeral = False
+        self.ignore_database_url = _ignore_database_url()
         self.db_url: Optional[str] = None
         self.path: Optional[Path] = None
         self.backend = "sqlite"
@@ -300,10 +322,12 @@ class Store:
         self._init()
 
     def _configure(self, path: Optional[Path]) -> None:
-        configured_url = os.environ.get("DATABASE_URL", "").strip()
+        # Decide before reading, validating or connecting: even a valid-looking
+        # but unreachable DATABASE_URL must not disable the Vercel demo.
+        configured_url = "" if self.ignore_database_url else os.environ.get("DATABASE_URL", "").strip()
         if configured_url:
-            # Still fail closed on a DATABASE_URL we would not dare to use: a
-            # mis-pointed connection string must never silently become SQLite.
+            # When PostgreSQL is enabled, retain fail-closed behaviour: a broken
+            # durable store must not silently become an ephemeral one.
             self.db_url = validate_database_url(configured_url)
             self.backend = "postgresql"
             if not psycopg2:
@@ -326,8 +350,8 @@ class Store:
         except OSError as exc:
             raise StoreConfigurationError(
                 f"SQLite collection store is not writable at {candidate} ({type(exc).__name__}: {exc}). "
-                "Set APIX_DATA_DIR to a writable path (on Vercel: /tmp/apix-data) or DATABASE_URL "
-                "to a PostgreSQL database."
+                "Set APIX_DATA_DIR to a writable path (on Vercel: /tmp/apix-data), or set "
+                "APIX_IGNORE_DATABASE_URL=0 and DATABASE_URL to a PostgreSQL database."
             ) from exc
         self.path = candidate
 
@@ -348,11 +372,16 @@ class Store:
 
     @property
     def note(self) -> Optional[str]:
+        notes = []
+        if self.ignore_database_url:
+            notes.append("DATABASE_URL is ignored (APIX_IGNORE_DATABASE_URL=1; default on Vercel).")
         if not self.available:
-            return f"Collection store unavailable — {self._unavailable_reason}"
-        if self.ephemeral:
-            return EPHEMERAL_STORE_NOTE
-        return None
+            notes.append(f"Collection store unavailable — {self._unavailable_reason}")
+        elif self.ephemeral:
+            notes.append(EPHEMERAL_STORE_NOTE)
+        elif self.ignore_database_url:
+            notes.append(f"Using SQLite. {POSTGRES_STORE_HINT}")
+        return " ".join(notes) or None
 
     @contextmanager
     def _connect(self):
@@ -647,6 +676,7 @@ class Store:
             "backend": self.backend,
             "durable": self.durable,
             "ephemeral": self.ephemeral,
+            "ignores_database_url": self.ignore_database_url,
             "unavailable_reason": self._unavailable_reason,
             "note": self.note,
         }

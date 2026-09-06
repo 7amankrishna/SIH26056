@@ -286,6 +286,8 @@ export interface StoreCounts {
   /** true only for PostgreSQL — SQLite on a serverless runtime dies with the instance. */
   durable?: boolean;
   ephemeral?: boolean;
+  /** DATABASE_URL is intentionally ignored; defaults to true for the Vercel demo. */
+  ignores_database_url?: boolean;
   unavailable_reason?: string | null;
   /** Human-readable storage caveat, safe to show verbatim. */
   note?: string | null;

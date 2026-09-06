@@ -32,6 +32,10 @@ BACKEND_ROOT = REPO_ROOT / "backend"
 #: offline capture source so no credentials or network are needed.
 SERVERLESS_ENV = {
     "VERCEL": "1",
+    "DATABASE_URL": None,
+    "APIX_IGNORE_DATABASE_URL": None,
+    "APIX_DATA_MODE": None,
+    "APIX_COLLECTOR_ENABLED": None,
     "APIX_COLLECTOR_SOURCES": "fixture",
     "APIX_MIN_REQUEST_GAP_SECONDS": "0",
 }
@@ -57,6 +61,7 @@ def _run(script: str, env: dict[str, "str | None"]) -> dict:
         capture_output=True,
         text=True,
         check=False,
+        timeout=60,
     )
     assert result.returncode == 0, result.stderr
     marker = "@@JSON@@"
@@ -79,7 +84,7 @@ SCRAPER_FLOW = '''
 import json
 from fastapi.testclient import TestClient
 from app.config import settings
-from app.main import app
+from api.index import app
 
 
 def call(client, method, path, **kwargs):
@@ -129,8 +134,24 @@ def test_serverless_defaults_point_the_store_at_tmp_and_drop_the_loop():
     assert out["data_dir"] == "/tmp/apix-data"
 
 
-def test_live_scraper_works_end_to_end_on_a_serverless_runtime(tmp_path):
-    out = _run(SCRAPER_FLOW, {**SERVERLESS_ENV, "APIX_DATA_DIR": str(tmp_path / "store")})
+@pytest.mark.parametrize(
+    "database_url",
+    [
+        None,
+        "https://github.com/7amankrishna/SIH26056",
+        "postgresql://user:secret@[broken/app",
+        "postgresql://user:secret@127.0.0.1:1/none",
+    ],
+)
+def test_live_scraper_works_end_to_end_on_a_serverless_runtime(tmp_path, database_url):
+    out = _run(
+        SCRAPER_FLOW,
+        {
+            **SERVERLESS_ENV,
+            "APIX_DATA_DIR": str(tmp_path / "store"),
+            "DATABASE_URL": database_url,
+        },
+    )
 
     # Nothing 500s — the scraper's endpoints answer even before any data exists.
     assert out["health"]["code"] == 200, out["health"]
@@ -143,6 +164,15 @@ def test_live_scraper_works_end_to_end_on_a_serverless_runtime(tmp_path):
     status = out["status"]["body"]
     assert status["request_scoped_sweeps"] is True
     assert status["store"]["ephemeral"] is True  # labelled, never silent
+    assert status["store"]["durable"] is False
+    assert status["store"]["ignores_database_url"] is True
+    assert "DATABASE_URL is ignored" in health["store_note"]
+    assert "APIX_IGNORE_DATABASE_URL=0" in status["store"]["note"]
+    if database_url:
+        # The public repo URL also appears legitimately in the scraper's user
+        # agent, so check storage metadata for the URL and all responses for secrets.
+        assert database_url not in json.dumps([health, status["store"]])
+        assert "secret" not in json.dumps(out)
 
     # Switching to scraped data collects *inside* the request that asked for it.
     assert out["switch"]["code"] == 200, out["switch"]
@@ -235,17 +265,19 @@ def test_round_robin_cap_keeps_every_route_in_scope():
 @pytest.mark.parametrize(
     "database_url",
     [
+        "https://github.com/7amankrishna/SIH26056",  # not a database address
         "sqlite:///tmp/nope.sqlite3",  # rejected at configuration time
         "postgresql://user:pass@127.0.0.1:1/none",  # valid, but nothing is listening
     ],
 )
-def test_bad_database_configuration_never_500s_the_dashboard(tmp_path, database_url):
+def test_explicit_database_opt_in_still_fails_closed_without_500s(tmp_path, database_url):
     out = _run(
         SCRAPER_FLOW,
         {
             **SERVERLESS_ENV,
             "APIX_DATA_DIR": str(tmp_path / "store"),
             "DATABASE_URL": database_url,
+            "APIX_IGNORE_DATABASE_URL": "0",
             "APIX_DB_CONNECT_TIMEOUT_SECONDS": "1",
         },
     )
@@ -256,7 +288,7 @@ def test_bad_database_configuration_never_500s_the_dashboard(tmp_path, database_
     assert out["overview"]["code"] == 200
     assert out["overview"]["body"]["data_origin"] == "demo"
 
-    if database_url.startswith("sqlite:"):
+    if not database_url.startswith("postgresql:"):
         # Refused at configuration time: the store degrades to empty-but-honest,
         # and switching to scraped data is a 503 that says why.
         assert out["status"]["code"] == 200, out["status"]

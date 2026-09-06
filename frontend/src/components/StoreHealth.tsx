@@ -39,10 +39,10 @@ export function StoreHealthBanner({
       : "Collection store";
   const detail = unavailable
     ? store?.unavailable_reason || store?.note ||
-      "Set DATABASE_URL to a PostgreSQL database, or APIX_DATA_DIR to a writable path (on Vercel: /tmp/apix-data)."
+      "Set APIX_DATA_DIR to a writable path (on Vercel: /tmp/apix-data), or set APIX_IGNORE_DATABASE_URL=0 and DATABASE_URL to a PostgreSQL database."
     : ephemeral
       ? store?.note ||
-        "Data is per-instance and is lost on a cold start or redeploy. Set DATABASE_URL for durable collection history."
+        "Data is per-instance and is lost on a cold start or redeploy. For durable history, set APIX_IGNORE_DATABASE_URL=0 and DATABASE_URL to a PostgreSQL database."
       : (note ?? "");
 
   return (

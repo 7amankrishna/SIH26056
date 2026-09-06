@@ -115,19 +115,29 @@ consequences are worth knowing before a demo:
   `AWS_LAMBDA_FUNCTION_NAME`, …) and uses SQLite under `/tmp/apix-data`, labelled
   *ephemeral* in every API response and in the dashboard's Live Feed: collected
   data survives as long as that instance does, and a cold start or redeploy
-  resets it. For durable history set `DATABASE_URL` to a managed PostgreSQL
+  resets it. **Vercel ignores `DATABASE_URL` by default**, so an inherited or
+  broken value cannot disable collection. For durable history set
+  `APIX_IGNORE_DATABASE_URL=0` and `DATABASE_URL` to a managed PostgreSQL
   (Neon/Supabase) — the same three tables (`collection_runs`, `raw_payloads`,
   `observations`) are created there, and the store reports `durable: true`.
 - **Storage problems degrade the scraper, never the dashboard.** If no database
-  can be used at all (an invalid `DATABASE_URL`, an unwritable path), the store
+  can be used at all (an invalid `DATABASE_URL` when explicitly enabled, or an
+  unwritable SQLite path), the store
   switches to an explicitly *unavailable* state: reads answer empty, writes are
   no-ops, `/api/health` still returns `200` with `store_available: false`, the
   collection endpoints explain themselves, and `POST /api/data-source` with
   `{"mode":"live"}` returns `503` with the reason instead of an opaque `500`. A
-  valid-but-unreachable PostgreSQL is a `503` on the scraper's own endpoints only.
+  valid-but-unreachable PostgreSQL, when enabled, is a `503` on the scraper's own
+  endpoints only — an opted-in durable database never silently falls back to SQLite.
 - **The toggle is server state, not browser state.** If a reproducible demo number
   matters, pin it with `APIX_DATA_MODE=demo`; otherwise a live mode left on by an
   earlier run will serve a thin, correctly-labelled-but-different index.
+
+Ignoring `DATABASE_URL` happens **before** validation or connection, not after a
+failed connection attempt. No Vercel environment-variable edits are required for
+the temporary-store demo. The API reports `store.ignores_database_url: true` and
+a safe explanatory note (never the connection string). Existing PostgreSQL data
+is left untouched; switching backends does not migrate collection history.
 
 ### Sweeps on a request-scoped runtime
 
@@ -166,10 +176,15 @@ Backend (prefix `APIX_`):
 - `APIX_DEMO_DAYS` — default `90`. Number of days the deterministic dataset spans.
 - `APIX_DATA_DIR` — where the SQLite store lives. Defaults to `backend/data/`
   locally and `/tmp/apix-data` on a serverless runtime.
+- `APIX_IGNORE_DATABASE_URL` — defaults to `1` on Vercel (`VERCEL` or
+  `VERCEL_ENV` set), `0` elsewhere. `1` / `true` / `yes` / `on` select SQLite
+  without reading or connecting to `DATABASE_URL`; `0` / `false` / `no` / `off`
+  enable the PostgreSQL setting. Unset/blank uses the platform default.
 - `DATABASE_URL` — PostgreSQL URL or keyword DSN (on Supabase use the
-  **Transaction pooler** URI, port 6543, with `?sslmode=require`). When set, it is
-  the store; an invalid value is refused rather than silently downgraded to
-  SQLite. Schema: [`db/supabase_schema.sql`](../db/supabase_schema.sql).
+  **Transaction pooler** URI, port 6543, with `?sslmode=require`). Used only when
+  `APIX_IGNORE_DATABASE_URL` is off. In that mode an invalid value is refused
+  rather than silently downgraded to SQLite; unset/blank still selects SQLite.
+  Schema: [`db/supabase_schema.sql`](../db/supabase_schema.sql).
 - `APIX_COLLECTOR_ENABLED` — default `1` locally, `0` on a serverless runtime
   (there is no process to keep a loop alive).
 - `APIX_COLLECTOR_SOURCES` — default `fixture` (offline capture). Also
@@ -186,8 +201,9 @@ Frontend:
 
 ## Moving to PostgreSQL
 
-The store already speaks PostgreSQL: set `DATABASE_URL` (managed Neon or Supabase
-works well with Vercel) and the same three tables are created there, with the
+The store already speaks PostgreSQL: set `APIX_IGNORE_DATABASE_URL=0` and
+`DATABASE_URL` (managed Neon or Supabase works well with Vercel), then redeploy.
+The same three tables are created there, with the
 SQLite date/idiom differences translated in one place (`Store._connect`).
 `GET /api/collect/status` then reports `store.durable: true` and the ephemeral
 warning disappears from the dashboard.

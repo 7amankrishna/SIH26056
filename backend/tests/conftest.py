@@ -19,6 +19,10 @@ os.environ["APIX_DATA_DIR"] = tempfile.mkdtemp(prefix="apix-tests-")
 os.environ["APIX_COLLECTOR_ENABLED"] = "0"
 os.environ["APIX_COLLECTOR_SOURCES"] = ""
 os.environ["APIX_DEMO_MODE"] = "1"
+# Never let the ordinary suite read or write a developer's deployment database.
+# PostgreSQL integration tests explicitly opt in via APIX_TEST_DATABASE_URL.
+os.environ.pop("DATABASE_URL", None)
+os.environ.pop("APIX_IGNORE_DATABASE_URL", None)
 
 
 @pytest.fixture(scope="session")

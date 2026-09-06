@@ -16,6 +16,7 @@ from app.collect.store import Store, StoreConfigurationError, validate_database_
 def clear_database_environment(monkeypatch):
     for name in (
         "DATABASE_URL",
+        "APIX_IGNORE_DATABASE_URL",
         "VERCEL",
         "VERCEL_ENV",
         "APIX_ENV",
@@ -83,9 +84,94 @@ def test_production_without_database_url_uses_a_labelled_ephemeral_store(monkeyp
     assert "DATABASE_URL" in (counts["note"] or "")
 
 
-def test_invalid_database_url_still_fails_closed(monkeypatch, tmp_path):
-    """A mis-pointed DATABASE_URL must never be silently downgraded to SQLite."""
+@pytest.mark.parametrize("platform_variable", ["VERCEL", "VERCEL_ENV"])
+@pytest.mark.parametrize(
+    "database_url",
+    [
+        "https://github.com/7amankrishna/SIH26056",
+        "mysql://user:secret@db.example/app",
+        "postgresql://user:secret@127.0.0.1:1/app",
+        "postgresql://user:secret@[broken/app",
+        "dbname=app host=db.example user=app password=secret",
+    ],
+)
+def test_vercel_ignores_database_url_without_using_postgres(
+    monkeypatch, tmp_path, platform_variable, database_url
+):
+    """A leftover URL cannot disable the demo or cause a database connection."""
+    monkeypatch.setenv(platform_variable, "1" if platform_variable == "VERCEL" else "preview")
+    monkeypatch.setenv("DATABASE_URL", database_url)
+    monkeypatch.setattr(store_module.settings, "data_dir", tmp_path)
+
+    def unexpected_postgres(*_args, **_kwargs):
+        pytest.fail("The ignored DATABASE_URL must not be parsed or connected to")
+
+    monkeypatch.setattr(store_module, "validate_database_url", unexpected_postgres)
+    monkeypatch.setattr(store_module.psycopg2, "connect", unexpected_postgres)
+
+    store = Store()
+    store.set_state("data_mode", "live")
+    store.begin_run("run-ignored-url", "fixture", "manual")
+    store.finish_run("run-ignored-url", status="success")
+    counts = store.counts()
+
+    assert store.path == tmp_path / "apix.sqlite3"
+    assert store.db_url is None
+    assert counts["available"] is True
+    assert counts["backend"] == "sqlite"
+    assert counts["ephemeral"] is True
+    assert counts["durable"] is False
+    assert counts["ignores_database_url"] is True
+    assert "DATABASE_URL is ignored" in counts["note"]
+    assert "APIX_IGNORE_DATABASE_URL=0" in counts["note"]
+    assert "cold start or redeploy" in counts["note"]
+    assert database_url not in counts["note"]
+    assert "secret" not in counts["note"]
+    assert counts["runs"] == 1
+    assert store.last_run()["status"] == "success"
+    assert Store().get_state("data_mode") == "live"
+
+
+@pytest.mark.parametrize("ignore_value", ["1", "true", "yes", "on", " TRUE "])
+def test_ignore_database_url_can_be_enabled_locally_without_psycopg2(
+    monkeypatch, tmp_path, ignore_value
+):
+    monkeypatch.setenv("APIX_IGNORE_DATABASE_URL", ignore_value)
+    monkeypatch.setenv("DATABASE_URL", "postgresql://user:secret@db.example/app")
+    monkeypatch.setattr(store_module, "psycopg2", None)
+
+    store = Store(tmp_path / "local.sqlite3")
+    store.set_state("data_mode", "live")
+
+    assert store.available is True
+    assert store.backend == "sqlite"
+    assert store.ephemeral is False
+    assert store.db_url is None
+    assert store.get_state("data_mode") == "live"
+    assert "DATABASE_URL is ignored" in store.note
+
+
+@pytest.mark.parametrize("ignore_value", ["0", "false", "no", "off"])
+def test_vercel_can_explicitly_opt_in_to_postgres(monkeypatch, ignore_value):
     monkeypatch.setenv("VERCEL", "1")
+    monkeypatch.setenv("APIX_IGNORE_DATABASE_URL", ignore_value)
+    monkeypatch.setenv("DATABASE_URL", "postgresql://user:secret@db.example/app")
+    monkeypatch.setattr(Store, "_init", lambda self: None)
+
+    store = Store()
+
+    assert store.available is True
+    assert store.backend == "postgresql"
+    assert store.path is None
+    assert store.durable is True
+    assert store.ephemeral is False
+    assert store.note is None
+
+
+def test_invalid_database_url_still_fails_closed_when_explicitly_enabled(monkeypatch, tmp_path):
+    """Opting in to a database must not silently downgrade it to SQLite."""
+    monkeypatch.setenv("VERCEL", "1")
+    monkeypatch.setenv("APIX_IGNORE_DATABASE_URL", "0")
     monkeypatch.setenv("DATABASE_URL", "sqlite:///tmp/apix.sqlite3")
     monkeypatch.setenv("APIX_DATA_DIR", str(tmp_path))
     monkeypatch.setattr(store_module.settings, "data_dir", tmp_path)
@@ -172,7 +258,11 @@ class _PostgresBranchConnection:
         pass
 
 
-def test_postgres_branch_performs_store_crud(monkeypatch):
+@pytest.mark.parametrize("vercel", [False, True])
+def test_postgres_branch_performs_store_crud(monkeypatch, vercel):
+    if vercel:
+        monkeypatch.setenv("VERCEL", "1")
+        monkeypatch.setenv("APIX_IGNORE_DATABASE_URL", "0")
     connection = _PostgresBranchConnection()
     monkeypatch.setenv("DATABASE_URL", "postgresql://user:password@db.example/app")
     monkeypatch.setattr(store_module.psycopg2, "connect", lambda _url, **_kwargs: connection)
