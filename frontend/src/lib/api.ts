@@ -3,6 +3,14 @@
 
 import type {
   AirlineSummary,
+  CollectFareRow,
+  CollectStatus,
+  CollectionPolicy,
+  CollectionRun,
+  DataSourceState,
+  DataMode,
+  RawPayloadRow,
+  SweepResult,
   CollectionRuns,
   FareDistribution,
   FaresResponse,
@@ -22,9 +30,11 @@ import type {
 const BASE = "/api";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  // Merge, never replace: POSTs need Content-Type while Accept stays on every
+  // call so a JSON error body is returned by the API rather than an HTML 406.
   const res = await fetch(`${BASE}${path}`, {
-    headers: { Accept: "application/json" },
     ...init,
+    headers: { Accept: "application/json", ...(init?.headers ?? {}) },
   });
   if (!res.ok) {
     let detail = `Request failed (${res.status})`;
@@ -73,6 +83,56 @@ export const api = {
   provenance: (indexId: string) =>
     request<Provenance>(`/provenance/${encodeURIComponent(indexId)}`),
   statsOverview: () => request<StatsOverview>("/stats/overview"),
+  // ---- collection engine (scraper) -------------------------------------- //
+  dataSource: () => request<DataSourceState>("/data-source"),
+  setDataSource: (mode: DataMode) =>
+    request<DataSourceState>("/data-source", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mode }),
+    }),
+
+  collectStatus: () => request<CollectStatus>("/collect/status"),
+  collectPolicy: () => request<CollectionPolicy>("/collect/policy"),
+  collectRuns: (limit = 20, source?: string) => {
+    const q = new URLSearchParams({ limit: String(limit) });
+    if (source) q.set("source", source);
+    return request<{ count: number; runs: CollectionRun[] }>(`/collect/runs?${q}`);
+  },
+  collectPayloads: (params?: { limit?: number; source?: string; runId?: string }) => {
+    const q = new URLSearchParams();
+    if (params?.limit) q.set("limit", String(params.limit));
+    if (params?.source) q.set("source", params.source);
+    if (params?.runId) q.set("run_id", params.runId);
+    const suffix = q.size ? `?${q}` : "";
+    return request<{ count: number; rows: RawPayloadRow[] }>(`/collect/payloads${suffix}`);
+  },
+  collectFares: (params?: { limit?: number; route?: string; status?: string }) => {
+    const q = new URLSearchParams();
+    if (params?.limit) q.set("limit", String(params.limit));
+    if (params?.route) q.set("route", params.route);
+    if (params?.status) q.set("status", params.status);
+    const suffix = q.size ? `?${q}` : "";
+    return request<{ count: number; total: number; rows: CollectFareRow[] }>(`/collect/fares${suffix}`);
+  },
+  runSweep: (body?: { routes?: string[]; lead_times?: number[]; wait?: boolean }) =>
+    request<SweepResult & { accepted?: boolean; detail?: string }>("/collect/sweep", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ wait: true, ...body }),
+    }),
+  runSweepBackground: () =>
+    request<{ accepted: boolean; detail: string }>("/collect/sweep", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    }),
+  testSource: (id: string) =>
+    request<{ source: string; ok: boolean; state: string; detail: string; latency_ms?: number }>(
+      `/collect/sources/${encodeURIComponent(id)}/test`,
+      { method: "POST" },
+    ),
+
   fares: (params?: { route?: string; airline?: string; limit?: number }) => {
     const q = new URLSearchParams();
     if (params?.route) q.set("route", params.route);

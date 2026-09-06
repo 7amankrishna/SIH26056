@@ -1,16 +1,19 @@
 // Collection Monitor — operational health of the source pipeline.
 
 import { useMemo } from "react";
-import { Activity, Gauge, ShieldCheck } from "lucide-react";
+import { Activity, Ban, Database, Gauge, ShieldCheck } from "lucide-react";
+import { Link } from "react-router-dom";
 import { ChartCard } from "../components/ChartCard";
 import { StatusPill } from "../components/badges";
 import { DataBoundary } from "../components/DataState";
 import { useCollectionRuns, useQuality } from "../hooks/useApi";
 import { formatDateTime, formatNumber, formatPercent } from "../lib/format";
+import { useDataSource } from "../hooks/useDataSource";
 
 export default function CollectionMonitor() {
   const { data, isLoading, isError, error } = useCollectionRuns();
   const { data: quality } = useQuality();
+  const { isLive, collectNow, collecting, counts } = useDataSource();
 
   const sources = data ? Object.values(data.sources) : [];
   const summary = data?.summary;
@@ -36,9 +39,31 @@ export default function CollectionMonitor() {
 
   return (
     <div className="space-y-5">
-      <div>
-        <h2 className="text-xl font-bold text-ink-900">Collection Monitor</h2>
-        <p className="text-sm text-ink-500">Operational health, source compliance and pipeline metrics.</p>
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h2 className="text-xl font-bold text-ink-900">Collection Monitor</h2>
+          <p className="text-sm text-ink-500">Operational health, source compliance and pipeline metrics.</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className={`chip ${isLive ? "bg-emerald-50 text-emerald-700" : "bg-ink-100 text-ink-600"}`}>
+            {isLive ? (
+              <>
+                <Database className="h-3 w-3" /> real run log · {counts?.runs ?? 0} sweeps recorded
+              </>
+            ) : (
+              <>synthetic monitor · demo mode</>
+            )}
+          </span>
+          {isLive && (
+            <button
+              onClick={collectNow}
+              disabled={collecting}
+              className="rounded-lg border border-ink-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-ink-600 hover:bg-ink-50 disabled:opacity-60"
+            >
+              {collecting ? "Collecting…" : "Sweep now"}
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
@@ -70,7 +95,7 @@ export default function CollectionMonitor() {
                   </thead>
                   <tbody className="divide-y divide-ink-50">
                     {sources.map((s) => (
-                      <tr key={s.source} className={statusActive(s.status) ? "hover:bg-ink-50" : "opacity-60"}>
+                      <tr key={s.source} className={statusActive(s.status) ? "hover:bg-ink-50" : "opacity-60"} title={s.last_error ?? undefined}>
                         <td className="px-5 py-2.5">
                           <div className="font-medium text-ink-800">{s.name}</div>
                           <div className="text-[11px] text-ink-400">{s.adapter}</div>
@@ -87,8 +112,23 @@ export default function CollectionMonitor() {
                           </span>
                         </td>
                         <td className="px-3 py-2.5">
-                          <span className={`chip ${s.status === "healthy" ? "bg-emerald-50 text-emerald-700" : s.status === "degraded" ? "bg-amber-50 text-amber-700" : "bg-ink-100 text-ink-500"}`}>
-                            {s.status === "healthy" ? "Closed" : s.status === "degraded" ? "Open" : "N/A"}
+                          <span
+                            className={`chip ${
+                              s.circuit_open ? "bg-red-50 text-red-700" : s.status === "healthy" ? "bg-emerald-50 text-emerald-700" : s.status === "degraded" ? "bg-amber-50 text-amber-700" : "bg-ink-100 text-ink-500"
+                            }`}
+                            title={s.last_error ?? s.compliance_note ?? undefined}
+                          >
+                            {s.circuit_open ? (
+                              <>
+                                <Ban className="h-3 w-3" /> open {Math.ceil((s.cooldown_seconds_left ?? 0) / 60)}m
+                              </>
+                            ) : s.status === "healthy" ? (
+                              "Closed"
+                            ) : s.status === "degraded" ? (
+                              "Open"
+                            ) : (
+                              "N/A"
+                            )}
                           </span>
                         </td>
                       </tr>
@@ -116,12 +156,24 @@ export default function CollectionMonitor() {
 
       <div className="flex items-start gap-3 rounded-xl border border-emerald-100 bg-emerald-50 p-4">
         <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-emerald-600" />
-        <p className="text-sm text-emerald-800">
-          <strong>Compliance by design.</strong> All collection adapters respect robots.txt, rate limits and terms of
-          service. If a source blocks automated access, the adapter enters <code className="rounded bg-emerald-100 px-1">STOP_AND_BACKOFF</code>.
-          The demo environment uses only authorized public feeds and deterministic synthetic data. No circumvention of
-          CAPTCHA, authentication or access controls is implemented.
-        </p>
+        <div className="text-sm text-emerald-800">
+          <p>
+            <strong>Compliance by design.</strong> Generic adapters pass a robots.txt gate that fails closed, honour{" "}
+            <code className="rounded bg-emerald-100 px-1">Crawl-delay</code> and{" "}
+            <code className="rounded bg-emerald-100 px-1">Retry-After</code>, and identify themselves with a reachable
+            contact. If a source blocks automated access the adapter enters{" "}
+            <code className="rounded bg-emerald-100 px-1">STOP_AND_BACKOFF</code>, the circuit breaker opens, and the run
+            is recorded as <em>blocked</em> — never as a healthy sweep. No CAPTCHA, authentication or access-control
+            circumvention is implemented anywhere in the engine.
+          </p>
+          <p className="mt-2 text-xs text-emerald-700">
+            Raw payloads, per-sweep run log and the enforced header policy live on the{" "}
+            <Link to="/live-feed" className="font-semibold underline decoration-emerald-300 underline-offset-2 hover:text-emerald-900">
+              Live Feed (Scraper)
+            </Link>{" "}
+            screen.
+          </p>
+        </div>
       </div>
     </div>
   );

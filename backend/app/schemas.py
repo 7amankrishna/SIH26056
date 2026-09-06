@@ -232,6 +232,23 @@ class Rejected(ApxModel):
     statuses: dict[str, int]
 
 
+# --- data source / collection ------------------------------------------------ #
+
+class DataSourceState(ApxModel):
+    """What the dashboard is currently serving: scraped data or demo data."""
+
+    mode: str = "demo"
+    effective_mode: str = "demo"
+    has_live_data: bool = False
+    locked: bool = False
+    collector_enabled: bool = False
+    background_running: bool = False
+    store: dict[str, Any] = Field(default_factory=dict)
+    sources: list[str] = Field(default_factory=list)
+    note: Optional[str] = None
+    updated_at: Optional[str] = None
+
+
 # --- collection ------------------------------------------------------------- #
 
 class SourceRun(ApxModel):

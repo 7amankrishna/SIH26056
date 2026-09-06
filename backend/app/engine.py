@@ -60,7 +60,14 @@ def _api_on(ds: Dataset, d: str) -> Optional[float]:
 
 
 def _last_n_days(ds: Dataset) -> list[str]:
-    """All dates in the dataset window as ISO strings (ordered)."""
+    """All dates with index values, ordered.
+
+    Live collections can have gaps (a source blocked mid-day, a sweep skipped),
+    so the dataset carries its own date list; the demo path is contiguous and
+    reconstructs the same list from the window length.
+    """
+    if ds.dates:
+        return list(ds.dates)
     if not ds.daily_apix:
         return []
     start = ds.end_date - dt.timedelta(days=len(ds.daily_apix) - 1)
@@ -68,6 +75,32 @@ def _last_n_days(ds: Dataset) -> list[str]:
         (start + dt.timedelta(days=i)).isoformat()
         for i in range(len(ds.daily_apix))
     ]
+
+
+def _index_routes(ds: Dataset) -> list[str]:
+    """Routes that belong to *this* dataset's index basket.
+
+    Demo data covers the whole published basket. A young live store usually only
+    holds a subset, and the weights were renormalised over exactly that subset
+    (``dataset._finalize_aggregates``), so the engine must iterate the same
+    subset — otherwise every uncollected route shows up as a phantom zero.
+    """
+    if ds.origin == "live" and ds.route_meta:
+        return [r for r in ds.route_meta if r in ROUTES]
+    return DS_ROUTES_IN_INDEX
+
+
+def _route_ref(route: str) -> dict:
+    """Static route metadata, tolerating routes outside the published basket."""
+    meta = ROUTES.get(route)
+    if meta:
+        return meta
+    origin, _, destination = route.partition("-")
+    return {
+        "origin": origin, "destination": destination,
+        "origin_city": origin, "destination_city": destination,
+        "distance": 0, "base_fare": 0.0, "weight": 0.0,
+    }
 
 
 def _route_index(ds: Dataset, route: str, d: str) -> Optional[float]:
@@ -115,15 +148,30 @@ def overview(ds: Dataset) -> dict[str, Any]:
 
     # observations in the most recent 24h window
     last_day_obs = [o for o in ds.observations if o.collection_date == last]
-    route_count = len(DS_ROUTES_IN_INDEX)
+    route_count = len(_index_routes(ds))
     airline_count = len({o.airline for o in ds.observations})
     source_count = len({o.source for o in ds.observations if o.quality_status == "VALID"})
 
     quality = quality_summary(ds)
 
     last_collection = last
-    last_run = SOURCES.get("mock", {})
-    success_rate = 100.0
+    live_sources = sorted({o.source for o in ds.observations})
+    days_collected = len(dates)
+
+    # In live mode the run log is the truth: report the most recent real sweep.
+    last_run_at = f"{last_collection}T09:10:00+05:30"
+    freshness = "fresh" if last_collection == dt.date.today().isoformat() else "stale"
+    if ds.origin == "live":
+        try:
+            from .collect.store import get_store
+
+            last_run = get_store().last_run()
+            if last_run and last_run.get("started_at"):
+                last_run_at = last_run["started_at"]
+                if last_run.get("status") in ("blocked", "failed"):
+                    freshness = last_run["status"]
+        except Exception:
+            pass
 
     return {
         "current_apix": round(current_api, 2) if current_api else None,
@@ -137,9 +185,13 @@ def overview(ds: Dataset) -> dict[str, Any]:
         "source_count": source_count,
         "quality_score": round(quality["score"], 1),
         "last_collection": last_collection,
-        "last_run_at": f"{last_collection}T09:10:00+05:30",
-        "index_freshness": "fresh",
-        "demo_mode": ds.demo_mode if hasattr(ds, "demo_mode") else True,
+        "last_run_at": last_run_at,
+        "index_freshness": freshness,
+        "demo_mode": ds.origin != "live",
+        "data_origin": ds.origin,
+        "live_sources": live_sources,
+        "days_collected": days_collected,
+        "routes_with_data": len({o.route for o in ds.observations if o.quality_status in ("VALID", "SUSPICIOUS")}),
         "data_period": {"start": dates[0], "end": last},
         "base_period": {"start": ds.base_period_start.isoformat(), "end": ds.base_period_end.isoformat()},
         "methodology_version": "apix-1.0.0",
@@ -197,8 +249,8 @@ def route_list(ds: Dataset, top: Optional[int] = None) -> list[dict[str, Any]]:
     week = dates[-8] if len(dates) > 8 else dates[0]
 
     out = []
-    for route in DS_ROUTES_IN_INDEX:
-        meta = ROUTES[route]
+    for route in _index_routes(ds):
+        meta = _route_ref(route)
         price = _route_day_price(ds, route, last)
         price_prev = _route_day_price(ds, route, prev)
         day_price = _route_day_price(ds, route, dates[-2]) if len(dates) > 1 else None
@@ -247,7 +299,7 @@ def route_heatmap(ds: Dataset) -> list[dict[str, Any]]:
 
 
 def route_detail(ds: Dataset, route: str) -> Optional[dict[str, Any]]:
-    if route not in DS_ROUTES_IN_INDEX:
+    if route not in _index_routes(ds):
         return None
     dates = _last_n_days(ds)
     # Build route index series.
@@ -286,13 +338,13 @@ def route_detail(ds: Dataset, route: str) -> Optional[dict[str, Any]]:
 
     return {
         "route": route,
-        "origin": ROUTES[route]["origin"],
-        "destination": ROUTES[route]["destination"],
-        "origin_city": ROUTES[route]["origin_city"],
-        "destination_city": ROUTES[route]["destination_city"],
-        "distance_km": ROUTES[route]["distance"],
-        "base_price": ds.route_meta[route]["base_price"],
-        "weight": ds.route_meta[route]["weight"],
+        "origin": _route_ref(route)["origin"],
+        "destination": _route_ref(route)["destination"],
+        "origin_city": _route_ref(route)["origin_city"],
+        "destination_city": _route_ref(route)["destination_city"],
+        "distance_km": _route_ref(route)["distance"],
+        "base_price": ds.route_meta.get(route, {}).get("base_price", 0.0),
+        "weight": ds.route_meta.get(route, {}).get("weight", 0.0),
         "meta": meta or {},
         "series": series,
         "airlines": airline_rows,
@@ -379,7 +431,13 @@ def lead_time_analysis(
     last = dates[-1]
     series = []
 
-    for lead in LEAD_TIMES:
+    # The published curve is fixed; a live collection only has the lead times it
+    # actually scheduled, so widen the axis to whatever was observed.
+    leads = list(LEAD_TIMES)
+    if ds.origin == "live":
+        leads = sorted(set(LEAD_TIMES) | {o.lead_time_days for o in ds.observations if o.lead_time_days > 0})
+
+    for lead in leads:
         obs = [o for o in ds.observations
                if o.lead_time_days == lead
                and o.collection_date == last
@@ -398,9 +456,13 @@ def lead_time_analysis(
             "observations": len(fares),
         })
 
-    # Elasticity metric: % diff between T+1 and T+45 average.
-    t1 = next((s["avg_fare"] for s in series if s["lead_time_days"] == 1), None)
-    t45 = next((s["avg_fare"] for s in series if s["lead_time_days"] == 45), None)
+    # Elasticity metric: % difference between the shortest and longest lead time
+    # available. For the demo basket that is exactly T+1 vs T+45; for a young live
+    # store it degrades gracefully to whatever range has actually been collected.
+    t1 = series[0]["avg_fare"] if series else None
+    t45 = series[-1]["avg_fare"] if len(series) > 1 else None
+    short_label = series[0]["label"] if series else "T+1"
+    long_label = series[-1]["label"] if len(series) > 1 else "T+45"
     elasticity = None
     if t1 and t45 and t45 > 0:
         elasticity = round((t1 - t45) / t45 * 100.0, 1)
@@ -410,7 +472,9 @@ def lead_time_analysis(
         "series": series,
         "elasticity": elasticity,
         "insight": (
-            f"Average observed fare is {elasticity}% higher at T+1 than at T+45." if elasticity is not None else None
+            f"Average observed fare is {elasticity}% higher at {short_label} than at {long_label}."
+            if elasticity is not None
+            else ("Lead-time curve needs at least two collected lead times." if ds.origin == "live" else None)
         ),
         "routes": route,
         "airline": airline,
@@ -643,7 +707,7 @@ def provenance(ds: Dataset, index_id: str) -> Optional[dict[str, Any]]:
 
     total_api = ds.daily_apix[index_id]
     route_contributions = []
-    for route in DS_ROUTES_IN_INDEX:
+    for route in _index_routes(ds):
         price = _route_day_price(ds, route, index_id)
         if price is None:
             continue

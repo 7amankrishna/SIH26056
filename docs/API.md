@@ -37,6 +37,27 @@ consumer.
 | `GET` | `/provenance/{index_id}` | Trace an index value to route contributions. |
 | `GET` | `/stats/overview` | Validation / backtest summary. |
 
+### Collection engine (scraper)
+
+| Method | Path | Description |
+| --- | --- | --- |
+| `GET` | `/data-source` | Which dataset the dashboard is served from (`live` scraped / `demo`), store counts, registered sources. |
+| `POST` | `/data-source` | `{"mode":"live"\|"demo"}` — flips the source for **every** screen; persisted so it survives a restart. `409` if `APIX_DATA_MODE` pins it. |
+| `GET` | `/collect/status` | Engine state: mode, scheduler, per-source health, circuit breaker, politeness settings, store totals. |
+| `POST` | `/collect/sweep` | Run a collection sweep. Body: `sources`, `routes`, `lead_times`, `wait`. Returns immediately unless `wait`. `409` when no adapter is enabled. |
+| `GET` | `/collect/runs` | Run log — `success` / `partial` / `blocked` / `failed`, per-run query, request, observation and failure counts. |
+| `GET` | `/collect/payloads` | **Raw responses exactly as collected** (verbatim JSON body, URL, HTTP status, latency, query). |
+| `GET` | `/collect/fares` | Normalized canonical observations with quality status and exclusion reason. |
+| `GET` | `/collect/sources` | Registered adapters and their compliance state. |
+| `POST` | `/collect/sources/{id}/test` | Probe a source: reachable, authorized, and how long it took. |
+| `GET` | `/collect/policy` | Sent headers, the enforced politeness values, and the explicit blocklist of non-implemented evasion techniques. |
+| `DELETE` | `/collect/store?confirm=true` | Wipe all collected data (guarded). |
+
+`GET /api/overview`, `/api/index/*`, `/api/routes`, `/api/airlines`,
+`/api/quality` and `/api/collection-runs` are **mode-aware**: they serve the
+demo dataset or the stored live observations depending on `/data-source`, and every
+response carries `data_origin` so a consumer can tell which it is looking at.
+
 ## Example response
 
 `GET /api/index/trend?range=30d`

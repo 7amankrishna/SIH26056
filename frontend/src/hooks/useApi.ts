@@ -67,3 +67,41 @@ export function useProvenance(indexId: string) {
 export function useStatsOverview() {
   return useQuery({ queryKey: ["stats-overview"], queryFn: api.statsOverview });
 }
+
+// --- collection engine (scraper) ------------------------------------------- //
+
+export function useCollectStatus() {
+  return useQuery({
+    queryKey: ["collect-status"],
+    queryFn: api.collectStatus,
+    refetchInterval: 5_000,
+  });
+}
+
+export function useCollectRuns(limit = 25) {
+  return useQuery({
+    queryKey: ["collect-runs", limit],
+    queryFn: () => api.collectRuns(limit),
+    refetchInterval: 10_000,
+  });
+}
+
+export function useRawPayloads(limit = 25) {
+  return useQuery({
+    queryKey: ["collect-payloads", limit],
+    queryFn: () => api.collectPayloads({ limit }),
+    refetchInterval: 15_000,
+  });
+}
+
+export function useCollectFares(limit = 150) {
+  return useQuery({
+    queryKey: ["collect-fares", limit],
+    queryFn: () => api.collectFares({ limit }),
+    refetchInterval: 15_000,
+  });
+}
+
+export function useCollectPolicy() {
+  return useQuery({ queryKey: ["collect-policy"], queryFn: api.collectPolicy, staleTime: 300_000 });
+}

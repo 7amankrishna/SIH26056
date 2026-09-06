@@ -104,11 +104,13 @@ def get_fares(
 ) -> dict:
     """Recent canonical fare observations (for an auditor / drill-down)."""
     ds = get_dataset()
+    route = route.upper() if route else None
+    airline = airline.upper() if airline else None
     rows = [o.as_dict() for o in ds.observations
             if (route is None or o.route == route)
             and (airline is None or o.airline == airline)]
     rows.sort(key=lambda r: r["collection_timestamp"], reverse=True)
-    return {"count": len(rows), "rows": rows[:limit]}
+    return {"count": len(rows), "data_origin": ds.origin, "rows": rows[:limit]}
 
 
 @router.get("/quality", response_model=schemas.Quality)
@@ -123,7 +125,14 @@ def get_quality_rejected() -> dict:
 
 @router.get("/collection-runs", response_model=schemas.CollectionRuns)
 def get_collection_runs() -> dict:
-    return collection_runs(get_dataset())
+    """Per-source health. In live mode this is the REAL run log from SQLite
+    (blocked/failed runs included); in demo mode it is the synthetic monitor."""
+    ds = get_dataset()
+    if ds.origin == "live":
+        from ..collect import collection_service
+
+        return collection_service.collection_runs_view()
+    return collection_runs(ds)
 
 
 @router.get("/methodology", response_model=schemas.Methodology)

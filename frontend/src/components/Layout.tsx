@@ -11,6 +11,7 @@ import {
   Building2,
   CalendarClock,
   ClipboardCheck,
+  Database,
   Gauge,
   Menu,
   Radar,
@@ -19,8 +20,10 @@ import {
   TrendingUp,
   X,
 } from "lucide-react";
-import { DemoBadge } from "./DemoBadge";
+import { DataModeBadge } from "./DemoBadge";
+import { DataSourceToggle } from "./DataSourceToggle";
 import { useOverview } from "../hooks/useApi";
+import { useDataSource } from "../hooks/useDataSource";
 import { DeltaBadge } from "./badges";
 import { formatDateTime } from "../lib/format";
 
@@ -32,6 +35,7 @@ const NAV = [
   { to: "/lead-time", label: "Lead Time", icon: CalendarClock },
   { to: "/quality", label: "Data Quality", icon: ClipboardCheck },
   { to: "/collection", label: "Collection Monitor", icon: Radar },
+  { to: "/live-feed", label: "Live Feed (Scraper)", icon: Database },
   { to: "/methodology", label: "Methodology", icon: BookOpen },
   { to: "/api", label: "API / Data Access", icon: Activity },
 ];
@@ -81,6 +85,18 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
 export function Layout() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const { data: overview } = useOverview();
+  const { isLive, mode, daysCollected, counts, ready } = useDataSource();
+  const [bannerHidden, setBannerHidden] = useState(false);
+
+  // A young live store legitimately has one day of data. Say what that means for
+  // the index instead of letting a flat 100.0 line look like a real result.
+  const thinLiveIndex = isLive && (daysCollected || 0) < 8;
+  const thinNotice = thinLiveIndex
+    ? `Live mode is serving ${counts?.valid_observations ?? 0} index-eligible observations from ` +
+      `${daysCollected || 1} collection day(s). APIx is rebased to 100 against its own base period, so the trend is ` +
+      `flat by construction until ≥8 days (and ideally 30+) have accrued. Switch back to Demo data for the ` +
+      `full 90-day history.`
+    : null;
 
   return (
     <div className="flex h-full min-h-screen bg-ink-50">
@@ -122,7 +138,8 @@ export function Layout() {
               </p>
             </div>
             <div className="ml-auto flex items-center gap-2">
-              <DemoBadge />
+              <DataSourceToggle />
+              <DataModeBadge />
               {overview?.current_apix != null && (
                 <div className="hidden items-center gap-2 md:flex">
                   <DeltaBadge value={overview.daily_change} />
@@ -136,6 +153,30 @@ export function Layout() {
         </header>
 
         <main className="flex-1 px-4 py-6 sm:px-6">
+          {thinNotice && !bannerHidden && (
+            <div className="mb-4 flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
+              <Database className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+              <p className="text-xs leading-relaxed text-amber-800">
+                <span className="font-semibold">Live data is thin — this is expected, not an error.</span> {thinNotice}
+              </p>
+              <button
+                onClick={() => setBannerHidden(true)}
+                className="ml-auto shrink-0 rounded-md px-2 py-1 text-[11px] font-medium text-amber-700 hover:bg-amber-100"
+              >
+                Dismiss
+              </button>
+            </div>
+          )}
+          {mode === "live" && !isLive && ready && (
+            <div className="mb-4 flex items-start gap-3 rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-xs text-sky-800">
+              <Radar className="mt-0.5 h-4 w-4 shrink-0" />
+              <p>
+                <span className="font-semibold">Live mode requested — no observations stored yet.</span> The screens below are
+                still on demo data so nothing looks broken. Open <span className="font-mono">Live Feed (Scraper)</span> and run a
+                sweep, or check that an adapter is enabled via <span className="font-mono">APIX_COLLECTOR_SOURCES</span>.
+              </p>
+            </div>
+          )}
           <Outlet />
         </main>
       </div>
