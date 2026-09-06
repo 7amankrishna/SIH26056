@@ -166,8 +166,10 @@ Backend (prefix `APIX_`):
 - `APIX_DEMO_DAYS` — default `90`. Number of days the deterministic dataset spans.
 - `APIX_DATA_DIR` — where the SQLite store lives. Defaults to `backend/data/`
   locally and `/tmp/apix-data` on a serverless runtime.
-- `DATABASE_URL` — PostgreSQL URL or keyword DSN. When set, it is the store; an
-  invalid value is refused rather than silently downgraded to SQLite.
+- `DATABASE_URL` — PostgreSQL URL or keyword DSN (on Supabase use the
+  **Transaction pooler** URI, port 6543, with `?sslmode=require`). When set, it is
+  the store; an invalid value is refused rather than silently downgraded to
+  SQLite. Schema: [`db/supabase_schema.sql`](../db/supabase_schema.sql).
 - `APIX_COLLECTOR_ENABLED` — default `1` locally, `0` on a serverless runtime
   (there is no process to keep a loop alive).
 - `APIX_COLLECTOR_SOURCES` — default `fixture` (offline capture). Also
@@ -189,6 +191,22 @@ works well with Vercel) and the same three tables are created there, with the
 SQLite date/idiom differences translated in one place (`Store._connect`).
 `GET /api/collect/status` then reports `store.durable: true` and the ephemeral
 warning disappears from the dashboard.
+
+[`db/supabase_schema.sql`](../db/supabase_schema.sql) is the whole schema in one
+idempotent file — paste it into the Supabase **SQL Editor** and press *Run*. It
+creates the five tables, the indexes the analytical queries use, table/column
+comments, and enables row-level security with a single policy for the `postgres`
+role the backend connects as (so the tables are not reachable through Supabase's
+public REST API with an anonymous key). The backend can also bootstrap the tables
+itself on first boot; running the file first is simply the explicit, reviewed
+path, and the two agree. Full click-through instructions, the exact Vercel
+environment variables and a message-by-message troubleshooting table:
+[Setup guide](SETUP_GUIDE.md).
+
+Verified against a real PostgreSQL by `backend/tests/test_postgres_store.py`
+(opt-in: set `APIX_TEST_DATABASE_URL` to a scratch database and it applies that
+same schema file, then round-trips state, runs, raw payloads, observations,
+duplicate handling, the date-window queries and reset).
 
 If you outgrow that thin wrapper:
 

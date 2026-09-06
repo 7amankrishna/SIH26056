@@ -63,6 +63,13 @@ wrapper is required — Vercel runs the ASGI app natively.
    to build `frontend/dist`, and deploys.
 3. The dashboard and the API share one URL.
 
+The scraper works on Vercel with no configuration at all (a clearly-labelled
+temporary store under `/tmp`). To make collected history survive a cold start or
+a redeploy, add one environment variable — `DATABASE_URL` — pointing at a free
+Supabase PostgreSQL database, and paste
+[`db/supabase_schema.sql`](db/supabase_schema.sql) into Supabase's SQL editor.
+Step-by-step, without a terminal: [Setup guide](docs/SETUP_GUIDE.md).
+
 Files that make this work: `api/index.py` (re-exports the FastAPI `app`),
 `vercel.json` (install/build commands + function `maxDuration`), and root
 `requirements.txt`.
@@ -198,6 +205,7 @@ period as history accrues.
 
 ## Documentation
 
+- [Setup guide — Vercel + Supabase, click-only](docs/SETUP_GUIDE.md)
 - [Architecture](docs/ARCHITECTURE.md)
 - [Index methodology](docs/METHODOLOGY.md)
 - [Data dictionary](docs/DATA_DICTIONARY.md)
