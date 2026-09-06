@@ -17,6 +17,13 @@ dist/
 *.pem
 *.key
 
+# Collected data (SQLite store, WAL sidecars) — runtime artifact, never committed
+backend/data/
+*.sqlite3
+*.sqlite3-shm
+*.sqlite3-wal
+fixtures_live/
+
 # OS
 .DS_Store
 

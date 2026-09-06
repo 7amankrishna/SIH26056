@@ -18,9 +18,22 @@ product.
 
 The entire system runs **fully offline and deterministically** from a built-in
 synthetic dataset generator, so you get a populated, realistic dashboard with
-`docker compose up --build` — no live scraping required. The pipeline is
-engineered so a genuine scraper / source adapter can later write into the same
-canonical fare model.
+`docker compose up --build` — no live scraping required.
+
+Alongside it, `backend/app/collect/` is a **working collection engine**: a
+scheduled background loop that fetches from configured sources, parses and
+normalizes responses into the canonical fare model, runs the quality gate, and
+persists everything (including the payload bytes as received) to SQLite. Both
+paths feed the same index layer, which is what lets the dashboard switch between
+them with one toggle.
+
+Collection sources are **authorized channels only** — a permissioned fare API
+(Amadeus self-service), config-driven JSON/HTML fetchers for hosts whose terms
+permit automation, and a bundled offline capture for demos. The engine implements
+no CAPTCHA handling, no bot-detection evasion and no access-control
+circumvention; see [Scraping / collection policy](docs/SCRAPING_POLICY.md), which
+includes why a Google-Flights scrape is specifically out of scope and what to
+point the same pipeline at instead.
 
 | Layer | Status |
 | --- | --- |
@@ -29,6 +42,9 @@ canonical fare model.
 | Index engine (route/airline/lead-time/aggregate APIx) | ✅ deterministic |
 | Quality engine (VALID / SUSPICIOUS / DUPLICATE / INVALID / SOLD_OUT / STALE) | ✅ auditable |
 | Deterministic demo dataset (24 routes · 6 airlines · 5 active sources · 90 days) | ✅ |
+| Background collection engine (scheduled sweeps → normalize → quality gate → SQLite) | ✅ |
+| **Demo ↔ Scraper toggle** on every screen (server-side, persisted) | ✅ |
+| Raw-payload archive + "as collected" Live Feed screen | ✅ |
 | Backtests / validation metrics | ✅ |
 | Docker Compose | ✅ |
 
@@ -88,6 +104,33 @@ The Vite dev server runs on `http://localhost:5173` and proxies `/api` to the
 backend. The dashboard shows a **DEMO DATA** badge whenever synthetic data is
 in use.
 
+### Running the collection engine
+
+```bash
+cd backend
+APIX_COLLECTOR_SOURCES=fixture \
+APIX_MIN_REQUEST_GAP_SECONDS=0 \
+.venv/bin/python -m uvicorn app.main:app --port 8000
+```
+
+Then flip the dashboard's **Scraper / Demo data** switch (top right), or drive it
+from the CLI:
+
+```bash
+curl -X POST localhost:8000/api/collect/sweep -H 'content-type: application/json' \
+     -d '{"wait": true, "routes": ["DEL-BOM"], "lead_times": [7, 30]}'
+curl -X POST localhost:8000/api/data-source -d '{"mode":"live"}' -H 'content-type: application/json'
+curl localhost:8000/api/overview | jq '{data_origin, current_apix, days_collected}'
+```
+
+The default `fixture` source needs no credentials and makes no network calls, so
+the whole live path — fetch → parse → normalize → quality → store → index → API —
+is demonstrable in a room with no internet. Switch `APIX_COLLECTOR_SOURCES` to
+`amadeus` (with `AMADEUS_CLIENT_ID`/`AMADEUS_CLIENT_SECRET`) to collect from a
+permissioned API for real. Data lands in `backend/data/apix.sqlite3` (gitignored);
+every sweep adds a collection day, and the index rebases against its own base
+period as history accrues.
+
 ---
 
 ## Dashboard screens
@@ -112,6 +155,9 @@ in use.
 8. **Methodology** — the 8-step framework, the actual formula, definitions and
    the *prototype* disclaimer.
 9. **API / Data Access** — the documented, typed REST contract.
+10. **Live Feed (Scraper)** — the collection engine's own screen: source health and
+    circuit-breaker state, the run log including blocked runs, collected fares,
+    raw payloads verbatim, and the enforced header/blocklist policy.
 
 ## Documentation
 
@@ -127,8 +173,8 @@ in use.
 ## Testing
 
 ```bash
-cd backend && . .venv/bin/activate && python -m pytest
-cd frontend && npm run typecheck && npm run build
+cd backend && . .venv/bin/activate && python -m pytest   # 68 tests incl. the collection engine
+cd frontend && npm run typecheck && npm test && npm run build
 ```
 
 ## Honest limitations

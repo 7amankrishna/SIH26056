@@ -52,3 +52,32 @@ synthetic dataset is in use.
 Emphasize **transparency and auditability** — this is the product. Be honest
 that the data is synthetic, weights are provisional, and there is no official
 benchmark or CPI integration yet. That honesty is a feature, not a weakness.
+
+## Step 10 — the data-source toggle (30 s, this is the memorable one)
+
+This is the moment to show that the pipeline is real rather than a mock-up.
+
+1. Point the **Scraper / Demo data** switch (top-right) at **Scraper**. The whole
+   dashboard re-renders off the SQLite store — same endpoints, same methodology,
+   collected numbers. The header badge flips to `LIVE · SCRAPED DATA`.
+2. Open **Live Feed (Scraper)**. Show the raw payloads tab: that is the bytes the
+   source returned, verbatim, next to the canonical observation it produced.
+3. Hit **Run sweep now** and watch the run log gain a row with query/request/
+   observation/failure counts.
+4. Click the **Collection rules** tab. It prints the enforced politeness values and
+   the explicit list of techniques that are *not* implemented — CAPTCHA handling,
+   UA/TLS-fingerprint rotation, `Sec-Fetch-*` forgery, stealth-browser patches.
+   Say this out loud: *"the collector is real, and it is deliberately unable to
+   evade a source that blocks it. If a source says no, the monitor shows blocked."*
+5. Flip back to **Demo data** to finish on the reproducible 90-day story.
+
+Be ready for the obvious question — *"can it just scrape Google Flights?"* The
+answer is in [Scraping / collection policy](SCRAPING_POLICY.md): no, and here is
+the substitute (Amadeus self-service API, licensed feeds, permissioned pages),
+with the same pipeline and the same audit trail. Rehearse that answer; a judge who
+asks it is testing whether you thought about it.
+
+A live store only has the days it has collected. APIx is rebased to 100 against
+its own base period, so a one-day live index is a flat line *by construction* —
+the dashboard says so in the amber banner. That is the honest behaviour; do not
+let it look like a bug by presenting it before the banner appears.

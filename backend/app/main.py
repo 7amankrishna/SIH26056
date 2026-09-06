@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import os
 import time
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
@@ -20,9 +21,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
+from .collect import collection_service
 from .config import settings
 from .dataset import get_dataset
-from .routers import api
+from .routers import api, collect
 
 START_TIME = time.time()
 
@@ -30,12 +32,25 @@ START_TIME = time.time()
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _FRONTEND_DIST = _REPO_ROOT / "frontend" / "dist"
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Warm the dataset and start the background collector if it is enabled."""
+    get_dataset()
+    try:
+        await collection_service.start()
+    except Exception as exc:  # a broken source must never stop the API
+        print(f"[apix] collector did not start: {type(exc).__name__}: {exc}")
+    yield
+    await collection_service.stop()
+
+
 app = FastAPI(
     title=settings.title,
     version=settings.version,
     description=settings.description,
     docs_url="/docs",
     redoc_url="/redoc",
+    lifespan=lifespan,
 )
 
 app.add_middleware(
@@ -47,17 +62,21 @@ app.add_middleware(
 )
 
 app.include_router(api.router, prefix=settings.api_prefix)
+app.include_router(collect.router, prefix=settings.api_prefix)
 
 
 @app.get(settings.api_prefix + "/health", tags=["Health"])
 def health() -> dict:
     """Liveness/readiness probe for orchestration and the frontend."""
     ds = get_dataset()
+    ds = get_dataset()
     return {
         "status": "ok",
         "version": settings.version,
         "title": settings.title,
-        "demo_mode": settings.demo_mode,
+        "demo_mode": ds.origin != "live",
+        "data_origin": ds.origin,
+        "collector_running": collection_service.background_running,
         "uptime_seconds": round(time.time() - START_TIME, 1),
         "timestamp": ds.end_date.isoformat() + "T09:00:00+05:30",
         "period_start": ds.base_period_start.isoformat(),

@@ -5,6 +5,8 @@ export interface Health {
   version: string;
   title: string;
   demo_mode: boolean;
+  data_origin?: "live" | "demo";
+  collector_running?: boolean;
   uptime_seconds: number;
   timestamp: string;
   period_start: string;
@@ -26,6 +28,11 @@ export interface Overview {
   last_run_at: string;
   index_freshness: string;
   demo_mode: boolean;
+  /** Which dataset the API served: 'live' = scraped, 'demo' = synthetic. */
+  data_origin?: "live" | "demo";
+  live_sources?: string[];
+  days_collected?: number;
+  routes_with_data?: number;
   data_period: { start: string; end: string };
   base_period: { start: string; end: string };
   methodology_version: string;
@@ -165,26 +172,32 @@ export interface RejectedObservation {
   exclusion_reason: string | null;
 }
 
+export interface SourceRun {
+  source: string;
+  name: string;
+  type: string;
+  status: string;
+  adapter: string;
+  compliance: string;
+  last_run: string | null;
+  observations: number;
+  valid_observations: number;
+  success_rate: number;
+  failure_count: number;
+  avg_latency_ms: number | null;
+  quotes: number;
+  /** live mode only — real breaker + failure state from the SQLite run log */
+  circuit_open?: boolean;
+  cooldown_seconds_left?: number;
+  consecutive_failures?: number;
+  last_error?: string | null;
+  compliance_note?: string;
+  recent_runs?: CollectionRun[];
+}
+
 export interface CollectionRuns {
   as_of: string;
-  sources: Record<
-    string,
-    {
-      source: string;
-      name: string;
-      type: string;
-      status: string;
-      adapter: string;
-      compliance: string;
-      last_run: string | null;
-      observations: number;
-      valid_observations: number;
-      success_rate: number;
-      failure_count: number;
-      avg_latency_ms: number | null;
-      quotes: number;
-    }
-  >;
+  sources: Record<string, SourceRun>;
   summary: {
     active_sources: number;
     healthy_sources: number;
@@ -194,6 +207,8 @@ export interface CollectionRuns {
     last_run: string;
     collection_success_rate: number;
   };
+  /** live mode only — the full run log, blocked/failed rows included */
+  runs?: CollectionRun[];
 }
 
 export interface Methodology {
@@ -248,4 +263,163 @@ export interface FaresResponse {
     total_fare: number;
     quality_status: string;
   }[];
+}
+
+// --------------------------------------------------------------------------- //
+// Collection engine (scraper) — data-source mode, runs, raw feed
+// --------------------------------------------------------------------------- //
+
+export type DataMode = "live" | "demo";
+
+export interface StoreCounts {
+  observations: number;
+  valid_observations: number;
+  raw_payloads: number;
+  runs: number;
+  days_collected: number;
+  by_status: Record<string, number>;
+  db_bytes: number;
+  db_path?: string;
+}
+
+export interface DataSourceState {
+  mode: DataMode;
+  /** What the API is *actually* serving; 'demo' when live was asked for but nothing is collected yet. */
+  effective_mode: DataMode;
+  has_live_data: boolean;
+  /** true when APIX_DATA_MODE pins the source and the toggle is inert */
+  locked?: boolean;
+  collector_enabled: boolean;
+  background_running: boolean;
+  store: StoreCounts;
+  sources: string[];
+  note?: string | null;
+  updated_at?: string | null;
+}
+
+export interface CollectionRun {
+  run_id: string;
+  source: string;
+  started_at: string;
+  finished_at?: string | null;
+  status: "running" | "success" | "partial" | "blocked" | "failed";
+  error_kind?: string | null;
+  detail?: string | null;
+  queries: number;
+  requests: number;
+  observations: number;
+  valid_observations: number;
+  duplicates: number;
+  invalid: number;
+  suspicious: number;
+  failures: number;
+  avg_latency_ms?: number | null;
+  trigger: string;
+}
+
+export interface CollectorSource {
+  id: string;
+  name: string;
+  type: string;
+  status: string;
+  adapter: string;
+  compliance: string;
+  compliance_note?: string;
+  base_url?: string;
+  requires_credentials?: boolean;
+  robots_gated?: boolean;
+  user_agent?: string;
+  last_run?: CollectionRun | null;
+  circuit_open?: boolean;
+  cooldown_seconds_left?: number;
+  consecutive_failures?: number;
+  last_error?: string | null;
+  last_error_kind?: string | null;
+  observations?: number;
+}
+
+export interface CollectStatus {
+  mode: DataMode;
+  mode_locked?: boolean;
+  effective_mode: DataMode;
+  collector_enabled: boolean;
+  background_running: boolean;
+  sweep_interval_seconds: number;
+  current_run?: Record<string, unknown> | null;
+  store: StoreCounts;
+  sources: CollectorSource[];
+  queries_per_sweep: number;
+  lead_times: number[];
+  politeness: {
+    min_gap_seconds: number;
+    max_retries: number;
+    backoff_base_seconds: number;
+    max_requests_per_sweep: number;
+    user_agent: string;
+    robots_fail_closed: boolean;
+  };
+  last_sweep_error?: string | null;
+}
+
+/** One stored response body, verbatim as collected. */
+export interface RawPayloadRow {
+  run_id: string;
+  source: string;
+  url: string;
+  http_status: number;
+  fetched_at: string;
+  latency_ms?: number | null;
+  query: Record<string, unknown>;
+  payload: Record<string, unknown>;
+  payload_sha?: string;
+}
+
+export interface CollectFareRow {
+  observation_id: string;
+  run_id?: string | null;
+  source: string;
+  origin: string;
+  destination: string;
+  route: string;
+  departure_date: string;
+  collection_date: string;
+  collection_timestamp: string;
+  airline: string;
+  flight_number?: string | null;
+  cabin: string;
+  fare_class?: string | null;
+  lead_time_days: number;
+  base_fare: number;
+  taxes: number;
+  fees: number;
+  total_fare: number;
+  currency: string;
+  availability: string;
+  seats_remaining?: number | null;
+  raw_payload_reference: string;
+  fingerprint: string;
+  quality_status: string;
+  quality_score: number;
+  exclusion_reason?: string | null;
+  in_basket?: number;
+}
+
+export interface CollectionPolicy {
+  policy_document: string;
+  sent_headers: string[];
+  not_implemented: string[];
+  politeness: Record<string, unknown>;
+  sources: CollectorSource[];
+}
+
+export interface SweepResult {
+  run_id: string;
+  started_at: string;
+  finished_at?: string;
+  observations: number;
+  valid_observations: number;
+  requests: number;
+  duration_ms: number;
+  error?: string | null;
+  sources: Record<string, { status: string; detail?: string; observations?: number; queries?: number }>;
 }

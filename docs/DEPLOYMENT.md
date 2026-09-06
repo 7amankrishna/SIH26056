@@ -101,6 +101,24 @@ Vite runs on `http://localhost:5173` and proxies `/api` to the backend at
 
 ---
 
+## Collection engine (persistence matters)
+
+The collector writes to `APIX_DATA_DIR` (default `backend/data/`). Two deployment
+consequences are worth knowing before a demo:
+
+- **Serverless filesystems are ephemeral and usually read-only.** On Vercel, set
+  `APIX_DATA_DIR=/tmp/apix-data` so SQLite can write, and treat collected data as
+  per-instance and per-deploy. For durable storage move the same three tables
+  (`collection_runs`, `raw_payloads`, `observations`) to Postgres — the store is a
+  thin wrapper, so this is one module.
+- **The toggle is server state, not browser state.** If a reproducible demo number
+  matters, pin it with `APIX_DATA_MODE=demo`; otherwise a live mode left on by an
+  earlier run will serve a thin, correctly-labelled-but-different index.
+- **A background loop does not suit a request-scoped runtime.** On Vercel, set
+  `APIX_COLLECTOR_ENABLED=0` and trigger sweeps from an external scheduler
+  (cron/GitHub Action) with `POST /api/collect/sweep`; the endpoint is the same
+  code path as the internal loop.
+
 ## Environment variables
 
 Backend (prefix `APIX_`):

@@ -263,11 +263,20 @@ def _rng(*parts: object) -> random.Random:
 
 @dataclass
 class Dataset:
-    """In-memory store of the full demo dataset and precomputed aggregates."""
+    """In-memory store of the dataset and precomputed aggregates.
+
+    Populated either by the deterministic demo generator or by the live
+    collection engine (see ``app.collect.live.build_live_dataset``). The engine
+    layer only reads these fields, so both paths feed identical screens.
+    """
 
     end_date: dt.date
     base_period_start: dt.date
     base_period_end: dt.date
+    #: 'demo' | 'live' — drives the badge and the disclaimer text.
+    origin: str = "demo"
+    #: every collection date that has data, ascending (live data can have gaps)
+    dates: list[str] = field(default_factory=list)
     observations: list[Observation] = field(default_factory=list)
     # (route, date) -> representative price + sample metadata
     route_day: dict[tuple[str, str], dict] = field(default_factory=dict)
@@ -576,10 +585,16 @@ def _finalize_aggregates(
     end: dt.date,
     base_start: dt.date,
     base_end: dt.date,
+    index_routes: Optional[list[str]] = None,
 ) -> None:
-    """Compute route-day prices, base values, per-route and aggregate indices."""
+    """Compute route-day prices, base values, per-route and aggregate indices.
+
+    Shared by both dataset builders. ``index_routes`` lets a live dataset restrict
+    the basket to routes it actually has observations for, instead of emitting
+    100.0 for routes with no data.
+    """
     # Routes that are "used in the index" (those with enough data).
-    index_routes = list(ROUTES.keys())
+    index_routes = list(index_routes) if index_routes is not None else list(ROUTES.keys())
 
     # Keep weights summing to 1 over the index routes.
     total_weight = sum(ROUTES[r]["weight"] for r in index_routes)
@@ -656,6 +671,7 @@ def _finalize_aggregates(
         current += dt.timedelta(days=1)
 
     ds.daily_apix_by_route = route_index_by_route
+    ds.dates = sorted(ds.daily_apix.keys())
 
 
 def _median(values: list[float]) -> float:
@@ -680,11 +696,49 @@ def _pct_change(current: float, previous: float) -> Optional[float]:
 # --------------------------------------------------------------------------- #
 
 _dataset: Optional[Dataset] = None
+_live_dataset: Optional[Dataset] = None
+_live_signature: Optional[tuple] = None
 
 
 def get_dataset() -> Dataset:
-    """Return the process-wide dataset, building it once."""
-    global _dataset
+    """Return the active dataset for the current data-source mode.
+
+    ``demo`` mode serves the deterministic synthetic store. ``live`` mode serves
+    whatever the collection engine has actually stored — and rebuilds it only
+    when the stored data changed (each sweep bumps the signature). If live mode
+    has no data yet we fall back to demo and say so, rather than rendering an
+    empty dashboard with no explanation.
+    """
+    global _dataset, _live_dataset, _live_signature
+
+    try:  # lazy import: the collector imports this module, not vice versa
+        from .collect.service import collection_service
+
+        mode = collection_service.mode
+    except Exception:
+        mode = "demo"
+
+    if mode == "live":
+        from .live import live_signature, build_live_dataset
+
+        sig = live_signature()
+        if sig is not None and (_live_dataset is None or _live_signature != sig):
+            _live_dataset = build_live_dataset()
+        if _live_dataset is not None and _live_dataset.observations:
+            return _live_dataset
+
     if _dataset is None:
         _dataset = build_dataset()
     return _dataset
+
+
+def dataset_mode() -> str:
+    """'live' only when live mode is selected AND data exists, else 'demo'."""
+    return get_dataset().origin
+
+
+def invalidate_live_cache() -> None:
+    """Force the live view to be rebuilt on the next request."""
+    global _live_dataset, _live_signature
+    _live_dataset = None
+    _live_signature = None
