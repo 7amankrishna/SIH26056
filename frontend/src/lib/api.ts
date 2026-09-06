@@ -10,6 +10,7 @@ import type {
   DataSourceState,
   DataMode,
   RawPayloadRow,
+  SweepAccepted,
   SweepResult,
   CollectionRuns,
   FareDistribution,
@@ -115,14 +116,20 @@ export const api = {
     const suffix = q.size ? `?${q}` : "";
     return request<{ count: number; total: number; rows: CollectFareRow[] }>(`/collect/fares${suffix}`);
   },
+  /** Runs the sweep inside this request and resolves with its result. */
   runSweep: (body?: { routes?: string[]; lead_times?: number[]; wait?: boolean }) =>
-    request<SweepResult & { accepted?: boolean; detail?: string }>("/collect/sweep", {
+    request<SweepResult & SweepAccepted>("/collect/sweep", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ wait: true, ...body }),
     }),
+  /**
+   * Fire-and-forget variant for runtimes with a surviving background loop. On a
+   * request-scoped runtime (Vercel) the backend ignores the distinction and runs
+   * the sweep synchronously anyway, so callers must handle both shapes.
+   */
   runSweepBackground: () =>
-    request<{ accepted: boolean; detail: string }>("/collect/sweep", {
+    request<SweepResult & SweepAccepted>("/collect/sweep", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({}),

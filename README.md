@@ -43,6 +43,7 @@ point the same pipeline at instead.
 | Quality engine (VALID / SUSPICIOUS / DUPLICATE / INVALID / SOLD_OUT / STALE) | ✅ auditable |
 | Deterministic demo dataset (24 routes · 6 airlines · 5 active sources · 90 days) | ✅ |
 | Background collection engine (scheduled sweeps → normalize → quality gate → SQLite) | ✅ |
+| In-request sweeps on serverless (Vercel) + ephemeral/durable store labelling | ✅ |
 | **Demo ↔ Scraper toggle** on every screen (server-side, persisted) | ✅ |
 | Raw-payload archive + "as collected" Live Feed screen | ✅ |
 | Backtests / validation metrics | ✅ |
@@ -63,9 +64,19 @@ wrapper is required — Vercel runs the ASGI app natively.
 3. The dashboard and the API share one URL.
 
 Files that make this work: `api/index.py` (re-exports the FastAPI `app`),
-`pyproject.toml` (`[tool.vercel] entrypoint`), `vercel.json`
-(install/build commands + function `maxDuration`), and root `requirements.txt`.
+`vercel.json` (install/build commands + function `maxDuration`), and root
+`requirements.txt`.
 See [Deployment](docs/DEPLOYMENT.md#option-a--vercel-recommended-for-a-public-demo).
+
+The scraper works on Vercel as well: the runtime has no process lifetime for a
+background loop, so the collector detects that and runs each sweep *inside* the
+request that asks for it — flipping the dashboard to **Scraper** collects and
+switches in one round trip. Without `DATABASE_URL` the store is SQLite under
+`/tmp`, which the API and the Live Feed screen label **ephemeral** (per instance,
+reset on cold start/redeploy); set `DATABASE_URL` to a managed PostgreSQL for
+durable collection history. Storage that cannot be used at all degrades the
+scraper only: `/api/health` still answers, and `POST /api/data-source` returns a
+`503` that says why instead of an opaque `500`.
 
 OpenAPI docs land at `/docs` on the deployed URL.
 
@@ -112,6 +123,12 @@ APIX_COLLECTOR_SOURCES=fixture_html \   # or: fixture (JSON capture), amadeus, h
 APIX_MIN_REQUEST_GAP_SECONDS=0 \
 .venv/bin/python -m uvicorn app.main:app --port 8000
 ```
+
+On a serverless runtime (`VERCEL` set) the background loop is off by default and
+`APIX_DATA_DIR` defaults to `/tmp/apix-data`, because no process survives between
+requests: `POST /api/collect/sweep` then runs the sweep inside the request and
+returns its result. See
+[Deployment → Sweeps on a request-scoped runtime](docs/DEPLOYMENT.md#sweeps-on-a-request-scoped-runtime).
 
 `fixture_html` is the one to show a jury: the collector fetches an HTML fare
 **page** and extracts offers with CSS-ish selectors (`div.offer`, `span.price`,

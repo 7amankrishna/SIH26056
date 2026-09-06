@@ -7,13 +7,16 @@ FastAPI backend and the built React SPA from one origin. Vercel's Python/FastAPI
 runtime runs the ASGI app natively (no `uvicorn`, no Mangum wrapper needed) and
 promotes the `frontend/dist` assets to the CDN.
 
+The collection engine works there too — see
+[Collection engine (persistence matters)](#collection-engine-persistence-matters)
+for how sweeps run inside a request and where the store lives.
+
 ### Files that make Vercel work
 
 | File | Purpose |
 | --- | --- |
 | `api/index.py` | Vercel entrypoint — re-exports the FastAPI `app` from `backend/app`. |
-| `pyproject.toml` | `[tool.vercel] entrypoint = "api.index:app"` — removes discovery ambiguity. |
-| `vercel.json` | `installCommand` + `buildCommand` build `frontend/dist`; function `maxDuration: 10`. |
+| `vercel.json` | `installCommand` + `buildCommand` build `frontend/dist`; function `maxDuration: 60` so an in-request sweep can finish. |
 | `requirements.txt` (root) | Python runtime dependencies for the function. |
 
 ### How the single function serves everything
@@ -103,21 +106,56 @@ Vite runs on `http://localhost:5173` and proxies `/api` to the backend at
 
 ## Collection engine (persistence matters)
 
-The collector writes to `APIX_DATA_DIR` (default `backend/data/`). Two deployment
+The collector writes to `APIX_DATA_DIR` (default `backend/data/`, and
+`/tmp/apix-data` automatically on a serverless runtime). Three deployment
 consequences are worth knowing before a demo:
 
-- **Serverless filesystems are ephemeral and usually read-only.** On Vercel, set
-  `APIX_DATA_DIR=/tmp/apix-data` so SQLite can write, and treat collected data as
-  per-instance and per-deploy. For durable storage move the same three tables
-  (`collection_runs`, `raw_payloads`, `observations`) to Postgres — the store is a
-  thin wrapper, so this is one module.
+- **Serverless filesystems are read-only except `/tmp`, and `/tmp` is
+  per-instance.** The store detects a hosted runtime (`VERCEL`, `VERCEL_ENV`,
+  `AWS_LAMBDA_FUNCTION_NAME`, …) and uses SQLite under `/tmp/apix-data`, labelled
+  *ephemeral* in every API response and in the dashboard's Live Feed: collected
+  data survives as long as that instance does, and a cold start or redeploy
+  resets it. For durable history set `DATABASE_URL` to a managed PostgreSQL
+  (Neon/Supabase) — the same three tables (`collection_runs`, `raw_payloads`,
+  `observations`) are created there, and the store reports `durable: true`.
+- **Storage problems degrade the scraper, never the dashboard.** If no database
+  can be used at all (an invalid `DATABASE_URL`, an unwritable path), the store
+  switches to an explicitly *unavailable* state: reads answer empty, writes are
+  no-ops, `/api/health` still returns `200` with `store_available: false`, the
+  collection endpoints explain themselves, and `POST /api/data-source` with
+  `{"mode":"live"}` returns `503` with the reason instead of an opaque `500`. A
+  valid-but-unreachable PostgreSQL is a `503` on the scraper's own endpoints only.
 - **The toggle is server state, not browser state.** If a reproducible demo number
   matters, pin it with `APIX_DATA_MODE=demo`; otherwise a live mode left on by an
   earlier run will serve a thin, correctly-labelled-but-different index.
-- **A background loop does not suit a request-scoped runtime.** On Vercel, set
-  `APIX_COLLECTOR_ENABLED=0` and trigger sweeps from an external scheduler
-  (cron/GitHub Action) with `POST /api/collect/sweep`; the endpoint is the same
-  code path as the internal loop.
+
+### Sweeps on a request-scoped runtime
+
+A background `asyncio` loop does not survive between invocations on Vercel — the
+process is frozen the moment a response is returned, so a "sweep queued, poll
+later" answer would never produce any data. The collector therefore detects that
+it has no surviving loop and runs the sweep **inside the request**:
+
+- `POST /api/collect/sweep` returns the finished sweep (`synchronous: true`)
+  instead of `{"accepted": true}`;
+- `POST /api/data-source {"mode":"live"}` awaits the first sweep, so the toggle
+  lands on real observations in one round trip;
+- the dashboard's **Collect now** / **Run sweep now** buttons await the result and
+  refresh every screen when it lands.
+
+So that a polite sweep cannot outrun the platform's function timeout
+(`maxDuration: 60` in `vercel.json`), an in-request sweep is sized to
+`APIX_REQUEST_SWEEP_BUDGET_SECONDS` ÷ the source's politeness gap, and the queries
+it drops are chosen round-robin so *every* basket route stays in scope. The
+response says when this happened (`note`), and `/api/collect/status` reports
+`request_scoped_sweeps` and `request_sweep_query_cap`. Offline captures make no
+network call and pay no gap, so they are never truncated — the full 24-route ×
+3-lead-time basket lands in tens of milliseconds.
+
+For continuous collection on a hosted deployment, point an external scheduler
+(Vercel Cron, a GitHub Action) at `POST /api/collect/sweep` — the same code path
+the internal loop uses — or run the backend somewhere with a real process
+lifetime (Docker, a VM) and leave `APIX_COLLECTOR_ENABLED=1`.
 
 ## Environment variables
 
@@ -126,6 +164,19 @@ Backend (prefix `APIX_`):
 - `APIX_DEMO_MODE` — default `1`. `0` switches the demo generator off for a real
   data path (not yet implemented).
 - `APIX_DEMO_DAYS` — default `90`. Number of days the deterministic dataset spans.
+- `APIX_DATA_DIR` — where the SQLite store lives. Defaults to `backend/data/`
+  locally and `/tmp/apix-data` on a serverless runtime.
+- `DATABASE_URL` — PostgreSQL URL or keyword DSN. When set, it is the store; an
+  invalid value is refused rather than silently downgraded to SQLite.
+- `APIX_COLLECTOR_ENABLED` — default `1` locally, `0` on a serverless runtime
+  (there is no process to keep a loop alive).
+- `APIX_COLLECTOR_SOURCES` — default `fixture` (offline capture). Also
+  `fixture_html`, `amadeus`, `http_json`, `http_html`.
+- `APIX_REQUEST_SWEEP_BUDGET_SECONDS` — default `45`. Wall-clock budget for a
+  sweep that has to finish inside one request; keep it under `maxDuration`.
+- `APIX_DB_CONNECT_TIMEOUT_SECONDS` — default `5`.
+- `APIX_DATA_MODE` — pin the dashboard to `demo` or `live` (the toggle then reports
+  itself locked).
 
 Frontend:
 
@@ -133,10 +184,13 @@ Frontend:
 
 ## Moving to PostgreSQL
 
-The engine is written against a simple observation-store interface so a
-PostgreSQL-backed store can be swapped in. Use a managed Postgres (e.g. Neon or
-Supabase) since Vercel Functions have no persistent local filesystem. The
-migration path:
+The store already speaks PostgreSQL: set `DATABASE_URL` (managed Neon or Supabase
+works well with Vercel) and the same three tables are created there, with the
+SQLite date/idiom differences translated in one place (`Store._connect`).
+`GET /api/collect/status` then reports `store.durable: true` and the ephemeral
+warning disappears from the dashboard.
+
+If you outgrow that thin wrapper:
 
 1. Add SQLAlchemy models matching [Data Dictionary](DATA_DICTIONARY.md).
 2. Implement store functions returning the same shapes the engine expects.

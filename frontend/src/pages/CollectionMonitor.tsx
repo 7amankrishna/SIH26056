@@ -6,6 +6,7 @@ import { Link } from "react-router-dom";
 import { ChartCard } from "../components/ChartCard";
 import { StatusPill } from "../components/badges";
 import { DataBoundary } from "../components/DataState";
+import { StoreHealthBanner } from "../components/StoreHealth";
 import { useCollectionRuns, useQuality } from "../hooks/useApi";
 import { formatDateTime, formatNumber, formatPercent } from "../lib/format";
 import { useDataSource } from "../hooks/useDataSource";
@@ -13,7 +14,7 @@ import { useDataSource } from "../hooks/useDataSource";
 export default function CollectionMonitor() {
   const { data, isLoading, isError, error } = useCollectionRuns();
   const { data: quality } = useQuality();
-  const { isLive, collectNow, collecting, counts } = useDataSource();
+  const { isLive, collectNow, collecting, counts, storeNote } = useDataSource();
 
   const sources = data ? Object.values(data.sources) : [];
   const summary = data?.summary;
@@ -65,6 +66,10 @@ export default function CollectionMonitor() {
           )}
         </div>
       </div>
+
+      {/* Only relevant once the monitor is talking about real collection: an
+          unavailable store, or a serverless /tmp store that will not survive. */}
+      {(isLive || counts?.available === false) && <StoreHealthBanner store={counts} note={storeNote} />}
 
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
         <MetricCard label="Healthy sources" value={summary?.healthy_sources ?? "—"} tone="emerald" />

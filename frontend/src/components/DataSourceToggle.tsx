@@ -18,7 +18,20 @@ const OPTIONS: { id: DataMode; label: string; icon: typeof Sun; hint: string }[]
 ];
 
 export function DataSourceToggle({ withCollectButton = true }: { withCollectButton?: boolean }) {
-  const { mode, isLive, busy, collecting, setMode, collectNow, counts, note, locked } = useDataSource();
+  const {
+    mode,
+    isLive,
+    busy,
+    collecting,
+    setMode,
+    collectNow,
+    counts,
+    note,
+    locked,
+    actionError,
+    storeAvailable,
+    storeNote,
+  } = useDataSource();
 
   const onKey = useCallback(
     (e: React.KeyboardEvent) => {
@@ -97,6 +110,17 @@ export function DataSourceToggle({ withCollectButton = true }: { withCollectButt
         })}
         {busy && <Loader2 className="absolute -right-1 -top-1 h-3 w-3 animate-spin text-brand-600" />}
       </div>
+
+      {/* A refused switch or a store that cannot persist is never silent. */}
+      {(actionError || (!locked && storeAvailable === false)) && (
+        <span
+          className="chip max-w-[280px] truncate bg-red-50 text-red-700"
+          title={actionError ?? storeNote ?? "The collection store is unavailable on this deployment."}
+        >
+          <AlertTriangle className="h-3 w-3 shrink-0" />
+          {actionError ?? "collection store unavailable"}
+        </span>
+      )}
 
       {/* Live-mode status readout: what the scraper has actually stored. */}
       {mode === "live" && (

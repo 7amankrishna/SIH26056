@@ -81,6 +81,8 @@ class SweepResult:
     requests: int = 0
     error: Optional[str] = None
     duration_ms: int = 0
+    #: Set when the sweep had to be shortened to fit inside one HTTP request.
+    note: Optional[str] = None
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -92,6 +94,7 @@ class SweepResult:
             "requests": self.requests,
             "duration_ms": self.duration_ms,
             "error": self.error,
+            "note": self.note,
             "sources": self.per_source,
         }
 
@@ -243,7 +246,12 @@ class CollectionService:
         self.store.set_state(MODE_KEY, mode)
         invalidate_live_cache()
         note = None
-        if mode == LIVE and not self.has_live_data:
+        if mode == LIVE and not self.store.available:
+            note = (
+                "Live mode selected but the collection store is unavailable, so nothing can be "
+                f"persisted and the dashboard keeps serving demo data. {self.store.unavailable_reason or ''}"
+            ).strip()
+        elif mode == LIVE and not self.has_live_data:
             note = (
                 "Live mode selected but the store is empty — the dashboard keeps serving demo "
                 "data until a sweep lands. Trigger one with POST /api/collect/sweep."
@@ -308,7 +316,7 @@ class CollectionService:
     # ------------------------------------------------------------------ #
     # Sweeps
     # ------------------------------------------------------------------ #
-    def build_queries(self, routes: Optional[list[str]] = None) -> list[Query]:
+    def build_queries(self, routes: Optional[list[str]] = None, max_queries: Optional[int] = None) -> list[Query]:
         today = dt.date.today()
         keys = routes or settings.sweep_routes or list(ROUTES.keys())
         out: list[Query] = []
@@ -325,7 +333,37 @@ class CollectionService:
                         lead_time_days=lead,
                     )
                 )
-        return out
+        return _cap_queries_round_robin(out, max_queries)
+
+    def effective_request_gap(self, source_ids: Optional[list[str]] = None) -> float:
+        """The politeness delay a sweep actually pays, per request.
+
+        The offline captures run in-process with ``min_gap=0`` — they make no
+        network call, so they cost no wall-clock time and must not be truncated.
+        Real HTTP sources pay ``APIX_MIN_REQUEST_GAP_SECONDS`` per host.
+        """
+        gaps: list[float] = []
+        for sid, adapter in self.adapters.items():
+            if source_ids and sid not in source_ids:
+                continue
+            try:
+                gaps.append(max(0.0, float(adapter.politeness.min_gap)))
+            except Exception:  # no transport bound yet: assume the configured gap
+                gaps.append(max(0.0, settings.min_seconds_between_requests))
+        return max(gaps) if gaps else max(0.0, settings.min_seconds_between_requests)
+
+    def request_sweep_query_cap(self, source_ids: Optional[list[str]] = None) -> Optional[int]:
+        """How many queries fit in a sweep that must finish inside one request.
+
+        ``None`` means "no cap": either a background loop owns the sweep (it can
+        take its time) or the enabled sources cost no wall-clock time at all.
+        """
+        if self.background_running:
+            return None
+        gap = self.effective_request_gap(source_ids)
+        if gap <= 0:
+            return None
+        return max(1, int(settings.request_sweep_budget_seconds / gap))
 
     def start_sweep(
         self,
@@ -371,7 +409,16 @@ class CollectionService:
             t0 = time.monotonic()
 
             targets = source_ids or list(self.adapters.keys())
-            queries = self.build_queries(routes)
+            cap = self.request_sweep_query_cap(targets)
+            queued = self.build_queries(routes)
+            queries = _cap_queries_round_robin(queued, cap) if cap else queued
+            if cap and len(queries) < len(queued):
+                result.note = (
+                    f"Sweep shortened to {len(queries)} of {len(queued)} queries so it finishes inside "
+                    f"one request ({self.effective_request_gap(targets):g}s politeness gap, "
+                    f"{settings.request_sweep_budget_seconds:.0f}s budget). Run the background loop "
+                    "(APIX_COLLECTOR_ENABLED=1) or an external scheduler to cover the full basket."
+                )
             try:
                 for sid in targets:
                     adapter = self.adapters.get(sid)
@@ -552,12 +599,18 @@ class CollectionService:
             )
             sources.append(desc)
 
+        cap = self.request_sweep_query_cap()
         return {
             "mode": self.mode,
             "mode_locked": self.mode_locked,
             "effective_mode": "live" if self.mode == LIVE and counts["observations"] else "demo",
             "collector_enabled": settings.collector_enabled,
             "background_running": self.background_running,
+            # Serverless/loop-off runtimes run a sweep inside the request instead.
+            "request_scoped_sweeps": not self.background_running,
+            "request_sweep_query_cap": cap,
+            "store_note": counts.get("note"),
+            "store_available": bool(counts.get("available", True)),
             "sweep_interval_seconds": settings.sweep_interval_seconds,
             "current_run": self._current.as_dict() if self._current else None,
             "store": counts,
@@ -673,6 +726,30 @@ class CollectionService:
             "source": source_id, "ok": health.ok, "state": health.state, "detail": health.detail,
             "compliance": health.compliance, "latency_ms": health.latency_ms or int((time.monotonic() - t0) * 1000),
         }
+
+
+def _cap_queries_round_robin(queries: list[Query], cap: Optional[int]) -> list[Query]:
+    """Trim a sweep to ``cap`` queries without dropping whole routes.
+
+    A request-scoped sweep cannot always afford the full basket (politeness gap ×
+    queries has to fit the platform's function timeout). Taking the first N
+    queries would silently scrape only the first few routes, so instead we deal
+    them out round-robin: every route gets its shortest lead time before any
+    route gets a second one. Coverage stays as wide as the budget allows.
+    """
+    if not cap or cap <= 0 or len(queries) <= cap:
+        return queries
+    by_route: dict[str, list[Query]] = {}
+    for q in queries:
+        by_route.setdefault(q.route, []).append(q)
+    out: list[Query] = []
+    for i in range(max(len(v) for v in by_route.values())):
+        for route_queries in by_route.values():
+            if i < len(route_queries):
+                out.append(route_queries[i])
+                if len(out) >= cap:
+                    return out
+    return out
 
 
 def _finalize_stats(stats: dict[str, Any]) -> dict[str, Any]:
