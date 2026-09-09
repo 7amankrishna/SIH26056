@@ -14,6 +14,25 @@ product.
 
 ---
 
+## UI / design system
+
+The dashboard is a token-driven design system (`docs/UI_AUDIT.md` has the full
+audit): every color is a CSS variable surfaced as a Tailwind token, so the whole
+app re-themes by flipping one class.
+
+- **Dark mode** — toggle in the header, `system` default, persisted, OS-synced,
+  no flash on load (pre-paint inline script); charts, heatmap, tooltips and
+  code panes all adapt. Surfaces: `#0a0a0b` page → `#141417` cards → `#1c1c20`
+  elevated; never pure black.
+- **WCAG AA verified in both themes** — text, chips, buttons, heatmap cells and
+  tooltips were checked numerically against the shipped token values.
+- **Heatmap tooltip** — portal-rendered and `position: fixed`, so it can never
+  be clipped by the matrix scroll container; solid dark-glass surface with
+  backdrop blur in both themes.
+- **Skeleton loaders** for every async view (charts, tables, stats), consistent
+  button/segment control system, visible `:focus-visible` rings, reduced-motion
+  support, per-route document titles, self-hosted Inter Variable (offline-safe).
+
 ## What works today (demo-ready)
 
 The entire system runs **fully offline and deterministically** from a built-in
@@ -37,7 +56,7 @@ point the same pipeline at instead.
 
 | Layer | Status |
 | --- | --- |
-| Dashboard (React + TypeScript + Tailwind + Recharts) | ✅ polished, API-backed |
+| Dashboard (React + TypeScript + Tailwind + Recharts) | ✅ polished, API-backed, dark mode |
 | REST API (FastAPI + Pydantic) | ✅ typed & documented |
 | Index engine (route/airline/lead-time/aggregate APIx) | ✅ deterministic |
 | Quality engine (VALID / SUSPICIOUS / DUPLICATE / INVALID / SOLD_OUT / STALE) | ✅ auditable |

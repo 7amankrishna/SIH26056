@@ -177,7 +177,9 @@ export function Layout() {
             </div>
             <div className="ml-auto flex items-center gap-2">
               <DataSourceToggle />
-              <DataModeBadge />
+              <div className="hidden sm:block">
+                <DataModeBadge />
+              </div>
               <ThemeToggle />
               {overview?.current_apix != null && (
                 <div className="hidden items-center gap-2 md:flex">
