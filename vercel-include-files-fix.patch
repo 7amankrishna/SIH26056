@@ -1,0 +1,16 @@
+diff --git a/vercel.json b/vercel.json
+--- a/vercel.json
++++ b/vercel.json
+@@ -5,11 +5,7 @@
+   "functions": {
+     "api/index.py": {
+       "maxDuration": 60,
+-      "includeFiles": [
+-        "backend/**",
+-        "frontend/dist/**",
+-        "data/**"
+-      ]
++      "includeFiles": "backend/**, frontend/dist/**, data/**"
+     }
+   },
+   "headers": [
