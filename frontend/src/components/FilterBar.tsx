@@ -24,7 +24,8 @@ function Select({
       <select
         value={value ?? "ALL"}
         onChange={(e) => onChange(e.target.value === "ALL" ? null : e.target.value)}
-        className="rounded-lg border border-ink-200 bg-white px-2.5 py-1.5 text-sm text-ink-700 shadow-sm outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500"
+        className="h-8 rounded-lg border bg-surface px-2.5 text-sm text-ink-700 shadow-card outline-none transition-colors duration-150 hover:border-ink-300 focus:border-brand-500 focus:ring-1 focus:ring-brand-500"
+        style={{ borderColor: "rgb(var(--ink-900) / 0.14)" }}
       >
         <option value="ALL">{placeholder}</option>
         {options.map((o) => (
@@ -71,10 +72,7 @@ export function FilterBar() {
       />
       <div className="ml-auto flex items-center gap-2">
         {hasFilters && (
-          <button
-            onClick={clear}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-ink-200 px-2.5 py-1.5 text-xs font-medium text-ink-600 hover:bg-ink-50"
-          >
+          <button onClick={clear} className="btn btn-sm btn-secondary">
             <RotateCcw className="h-3 w-3" /> Clear
           </button>
         )}

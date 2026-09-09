@@ -112,7 +112,8 @@
   --code-fg: 226 232 240;
   --code-muted: 148 163 184;
 
-  /* ink scale inverts: low shades = subtle fills, high shades = bright text */
+  /* ink scale inverts: low shades = subtle fills, high shades = bright text.
+     200/300 are premultiplied border/fill grays (≈ white at 10–16%). */
   --ink-900: 250 250 250; /* primary text  #fafafa */
   --ink-800: 232 232 236;
   --ink-700: 212 212 218;
@@ -120,69 +121,72 @@
   --ink-500: 166 166 176; /* secondary text — ≥7:1 on surface */
   --ink-400: 143 143 153; /* tertiary — ≥4.9:1 on surface */
   --ink-300: 82 82 91;
-  --ink-200: 255 255 255; /* use with /10-ish modifiers for borders */
+  --ink-200: 42 42 47; /* borders / stronger fills */
   --ink-100: 34 34 39;
   --ink-50: 26 26 30;
 
-  /* brand brightens for dark canvases; solid buttons stay 600/700 */
-  --brand-700: 14 116 144;
+  /* brand: chip/soft uses premultiplied tints; 300/700 go bright because they
+     are used as TEXT on dark; solid buttons set their own colors (see .btn) */
+  --brand-700: 103 232 249; /* chip text #67e8f9 */
   --brand-600: 8 145 178;
   --brand-500: 34 211 238;
   --brand-400: 103 232 249;
   --brand-300: 103 232 249;
-  --brand-50: 8 145 178; /* used as chip bg at low alpha */
+  --brand-50: 24 44 49; /* chip/active-nav bg #182c31 */
 
   --accent: 129 140 248; /* indigo-400 */
   --accent-fg: 15 15 20;
 
-  --emerald-50: 16 185 129;
-  --emerald-100: 6 95 70;
-  --emerald-200: 52 211 153;
+  /* semantic scales — soft shades are premultiplied tints over the dark
+     surface; mid/700 shades brighten so chip text passes AA on the tints. */
+  --emerald-50: 19 46 40; /* #132e28 */
+  --emerald-100: 22 66 53;
+  --emerald-200: 25 60 48; /* border tint */
   --emerald-300: 110 231 183;
   --emerald-400: 52 211 153;
   --emerald-500: 52 211 153;
   --emerald-600: 110 231 183;
-  --emerald-700: 110 231 183; /* chip text on /10 bg */
-  --emerald-800: 167 243 208;
+  --emerald-700: 110 231 183; /* chip text #6ee7b7 */
+  --emerald-800: 167 243 208; /* banner body text */
   --emerald-900: 209 250 229;
 
-  --amber-50: 245 158 11;
-  --amber-100: 146 64 14;
-  --amber-200: 253 230 138;
+  --amber-50: 54 41 22; /* #362916 */
+  --amber-100: 70 54 26;
+  --amber-200: 78 52 20; /* border tint */
   --amber-500: 251 191 36;
   --amber-600: 252 211 77;
-  --amber-700: 252 211 77;
-  --amber-800: 253 230 138;
+  --amber-700: 252 211 77; /* chip text #fcd34d */
+  --amber-800: 253 230 138; /* banner strong text */
 
-  --red-50: 239 68 68;
-  --red-100: 153 27 27;
-  --red-200: 252 165 165;
+  --red-50: 48 28 30; /* #301c1e */
+  --red-100: 66 34 37;
+  --red-200: 72 40 43; /* border tint */
   --red-400: 248 113 113;
   --red-500: 248 113 113;
   --red-600: 252 165 165;
-  --red-700: 252 165 165;
+  --red-700: 252 165 165; /* chip text #fca5a5 */
   --red-800: 254 202 202;
 
-  --sky-50: 14 165 233;
-  --sky-100: 7 89 133;
-  --sky-200: 125 211 252;
+  --sky-50: 19 40 52; /* #132834 */
+  --sky-100: 24 60 78;
+  --sky-200: 28 66 86; /* border tint */
   --sky-400: 56 189 248;
   --sky-500: 56 189 248;
   --sky-600: 125 211 252;
-  --sky-700: 125 211 252;
-  --sky-800: 186 230 253;
+  --sky-700: 125 211 252; /* chip text #7dd3fc */
+  --sky-800: 186 230 253; /* banner body text */
 
-  --purple-50: 139 92 246;
-  --purple-700: 196 181 253;
+  --purple-50: 30 26 48; /* #1e1a30 */
+  --purple-700: 196 181 253; /* #c4b5fd */
 
-  --orange-50: 249 115 22;
-  --orange-700: 253 186 116;
+  --orange-50: 49 36 26; /* #31241a */
+  --orange-700: 253 186 116; /* #fdba74 */
 
   --slate-200: 51 51 60;
   --slate-400: 143 143 153;
 
-  --cyan-50: 8 145 178;
-  --cyan-200: 103 232 249;
+  --cyan-50: 23 44 51;
+  --cyan-200: 26 60 70;
   --cyan-700: 103 232 249;
 
   /* elevation — borders and surface steps carry depth; shadows nearly off */
@@ -305,10 +309,18 @@
     font-size: 0.75rem;
   }
   .btn-primary {
-    @apply bg-brand-700 font-semibold text-white hover:bg-brand-600;
+    background-color: #0e7490; /* cyan-700 — 4.9:1 with the white label */
+    @apply font-semibold text-white;
+    transition: background-color 150ms ease, transform 150ms ease;
+  }
+  .btn-primary:hover {
+    background-color: #0891b2;
   }
   .dark .btn-primary {
-    @apply bg-brand-600 hover:bg-brand-500;
+    background-color: #0e7490;
+  }
+  .dark .btn-primary:hover {
+    background-color: #0a86a6;
   }
   .btn-secondary {
     @apply border bg-surface font-medium text-ink-700 hover:bg-ink-50;

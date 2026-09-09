@@ -85,9 +85,11 @@ describe("App render smoke test", () => {
   it("renders the Overview dashboard without throwing", async () => {
     render(
       <QueryClientProvider client={queryClient()}>
-        <MemoryRouter initialEntries={["/"]}>
-          <App />
-        </MemoryRouter>
+        <ThemeProvider>
+          <MemoryRouter initialEntries={["/"]}>
+            <App />
+          </MemoryRouter>
+        </ThemeProvider>
       </QueryClientProvider>,
     );
     expect(await screen.findByRole("heading", { name: "Overview" })).toBeInTheDocument();
