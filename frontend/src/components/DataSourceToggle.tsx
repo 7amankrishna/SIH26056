@@ -91,7 +91,7 @@ export function DataSourceToggle({ withCollectButton = true }: { withCollectButt
                 active ? "text-ink-900" : "text-ink-500 group-hover:text-ink-600"
               }`}
             >
-              <opt.icon className={`h-3 w-3 ${opt.id === "live" && active ? "text-emerald-600" : ""}`} />
+              <opt.icon className={`h-3 w-3 ${opt.id === "live" && active ? "text-emerald-700" : ""}`} />
               {opt.label}
             </span>
           );

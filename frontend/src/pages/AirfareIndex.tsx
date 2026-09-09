@@ -103,7 +103,7 @@ function RouteIndexTable() {
                   <td className="px-3 py-2.5 tabular-nums text-ink-500">{r.observations}</td>
                   <td className="px-3 py-2.5 tabular-nums text-ink-500">{r.quality ?? "—"}%</td>
                   <td className="px-3 py-2.5"><Sparkline data={r.sparkline} /></td>
-                  <td className="px-3 py-2.5 text-ink-400"><ArrowRight className="h-4 w-4" /></td>
+                  <td className="px-3 py-2.5 text-ink-500"><ArrowRight className="h-4 w-4" /></td>
                 </tr>
               ))}
             </tbody>

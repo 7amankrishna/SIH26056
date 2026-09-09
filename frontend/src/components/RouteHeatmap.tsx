@@ -192,10 +192,10 @@ export function RouteHeatmap({ compact = false }: { compact?: boolean }) {
                     );
                     }
                   const value = mode === "change" ? r.change_7d ?? 0 : r.route_index ?? 100;
-                  const { css, strength } = heatColor(value, mode, t, dark);
-                  // Strong tints need white text in light mode; weak tints read
-                  // better with ink text. In dark, text is always light.
-                  const lightText = dark || strength > 0.55;
+                  const { css } = heatColor(value, mode, t, dark);
+                  // Light mode: dark ink text (passes AA on every tint).
+                  // Dark mode: light text (caps above keep every cell ≥4.5:1).
+                  const lightText = dark;
                   const label =
                     `${r.origin_city} → ${r.destination_city}. ` +
                     `Fare ${formatINR(r.current_fare)}, 7-day ${formatPercent(r.change_7d)}. Click to open the route.`;

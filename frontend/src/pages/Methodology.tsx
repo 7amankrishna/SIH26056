@@ -52,7 +52,7 @@ export default function Methodology() {
                   {Object.entries(data.definitions).map(([k, v]) => (
                     <div key={k} className="rounded-lg bg-white/5 p-3 ring-1 ring-white/10">
                       <div className="font-mono text-sm font-semibold text-code-fg">{k}</div>
-                      <div className="mt-0.5 text-xs text-ink-400">{v}</div>
+                      <div className="mt-0.5 text-xs text-ink-500">{v}</div>
                     </div>
                   ))}
                 </div>
@@ -69,7 +69,7 @@ export default function Methodology() {
                   <h4 className="text-sm font-semibold text-ink-800">{step.title}</h4>
                   <p className="mt-1 text-xs leading-relaxed text-ink-500">{step.detail}</p>
                   {step.step < data.steps.length && (
-                    <ArrowRight className="absolute -right-2 top-1/2 hidden h-4 w-4 -translate-y-1/2 text-ink-400 lg:block" />
+                    <ArrowRight className="absolute -right-2 top-1/2 hidden h-4 w-4 -translate-y-1/2 text-ink-500 lg:block" />
                   )}
                 </div>
               ))}
@@ -84,7 +84,7 @@ export default function Methodology() {
                 ].map((s, i, arr) => (
                   <div key={s} className="flex items-center gap-2">
                     <span className="rounded-lg border border-ink-200 bg-ink-50 px-3 py-1.5 text-xs font-medium text-ink-700">{s}</span>
-                    {i < arr.length - 1 && <ArrowRight className="h-3.5 w-3.5 text-ink-400" />}
+                    {i < arr.length - 1 && <ArrowRight className="h-3.5 w-3.5 text-ink-500" />}
                   </div>
                 ))}
               </div>

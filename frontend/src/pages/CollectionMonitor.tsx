@@ -153,7 +153,7 @@ export default function CollectionMonitor() {
       </div>
 
       <div className="flex items-start gap-3 rounded-xl border border-emerald-100 bg-emerald-50 p-4">
-        <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-emerald-600" />
+        <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-emerald-700" />
         <div className="text-sm text-emerald-800">
           <p>
             <strong>Compliance by design.</strong> Generic adapters pass a robots.txt gate that fails closed, honour{" "}

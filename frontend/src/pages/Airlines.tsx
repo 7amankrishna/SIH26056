@@ -144,7 +144,7 @@ function AirlineMatrix({ airlines }: { airlines: any[] }) {
                 <div className="h-1.5 rounded-full bg-accent" style={{ width: `${Math.min(100, a.volatility ?? 0)}%` }} />
               </div>
             </div>
-            <div className={`flex h-9 w-9 items-center justify-center rounded-full text-[10px] font-bold ${positive ? "bg-red-50 text-red-600" : "bg-emerald-50 text-emerald-600"}`} style={{ width: size, height: size }}>
+            <div className={`flex h-9 w-9 items-center justify-center rounded-full text-[10px] font-bold ${positive ? "bg-red-50 text-red-600" : "bg-emerald-50 text-emerald-700"}`} style={{ width: size, height: size }}>
               {a.index_contribution != null ? (a.index_contribution > 0 ? "+" : "") + a.index_contribution.toFixed(0) : "—"}
             </div>
           </div>

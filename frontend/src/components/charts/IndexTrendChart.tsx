@@ -81,7 +81,7 @@ export function IndexTrendChart({ title, subtitle, defaultRange = "90d", showRan
         {change7d != null && (
           <span className="text-xs text-ink-500">
             7d change{" "}
-            <span className={change7d > 0 ? "font-semibold text-red-600 dark:text-red-400" : "font-semibold text-emerald-600 dark:text-emerald-400"}>
+            <span className={change7d > 0 ? "font-semibold text-red-600 dark:text-red-400" : "font-semibold text-emerald-700 dark:text-emerald-400"}>
               {change7d > 0 ? "+" : ""}
               {change7d.toFixed(1)}%
             </span>

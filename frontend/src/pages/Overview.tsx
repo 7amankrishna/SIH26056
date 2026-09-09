@@ -28,7 +28,7 @@ export default function Overview() {
     .slice(0, 3);
 
   const deltaColor = (v: number | null | undefined) =>
-    v == null ? "text-ink-500" : v > 0 ? "text-red-600" : v < 0 ? "text-emerald-600" : "text-ink-500";
+    v == null ? "text-ink-500" : v > 0 ? "text-red-600" : v < 0 ? "text-emerald-700" : "text-ink-500";
 
   return (
     <div className="space-y-5">
@@ -139,7 +139,7 @@ function RouteRanking({
             onClick={() => navigate(`/routes?route=${r.route}`)}
             className="flex w-full items-center gap-4 px-5 py-3 text-left transition-colors duration-150 hover:bg-ink-50"
           >
-            <span className="w-6 text-center text-sm font-bold text-ink-400">{i + 1}</span>
+            <span className="w-6 text-center text-sm font-bold text-ink-500">{i + 1}</span>
             <div className="min-w-0 flex-1">
               <div className="truncate text-sm font-medium text-ink-800">
                 {r.origin_city} → {r.destination_city}
@@ -147,7 +147,7 @@ function RouteRanking({
               <div className="text-xs text-ink-500">₹{r.current_fare?.toLocaleString("en-IN") ?? "—"}</div>
             </div>
             <Sparkline data={r.sparkline} color={up ? t.red : t.emerald} />
-            <span className={`w-20 text-right text-sm font-semibold tabular-nums ${up ? "text-red-600 dark:text-red-400" : "text-emerald-600 dark:text-emerald-400"}`}>
+            <span className={`w-20 text-right text-sm font-semibold tabular-nums ${up ? "text-red-600 dark:text-red-400" : "text-emerald-700 dark:text-emerald-400"}`}>
               {r.change_7d != null ? `${r.change_7d > 0 ? "+" : ""}${r.change_7d.toFixed(1)}%` : "—"}
             </span>
           </button>
