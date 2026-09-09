@@ -12,17 +12,18 @@ API-only usage) the SPA routes are simply not mounted.
 from __future__ import annotations
 
 import os
+import sqlite3
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from .collect import collection_service
-from .collect.store import DatabaseConfigError
+from .collect.store import StoreError
 from .config import settings
 from .dataset import get_dataset
 from .routers import api, collect
@@ -38,11 +39,22 @@ async def lifespan(app: FastAPI):
     """Warm the dataset and start the background collector if it is enabled."""
     get_dataset()
     try:
+        store = collection_service.store
+        if not store.available:
+            # Scraping is disabled until storage is fixed — say so loudly at boot.
+            print(f"[apix] collection store unavailable: {store.unavailable_reason}")
+        elif store.note:
+            print(f"[apix] collection store ({store.path}): {store.note}")
         await collection_service.start()
+        if not collection_service.background_running:
+            print("[apix] no background collector loop — sweeps run inside the request that asks for them")
     except Exception as exc:  # a broken source must never stop the API
         print(f"[apix] collector did not start: {type(exc).__name__}: {exc}")
     yield
-    await collection_service.stop()
+    try:
+        await collection_service.stop()
+    except Exception as exc:
+        print(f"[apix] collector did not stop cleanly: {type(exc).__name__}: {exc}")
 
 
 app = FastAPI(
@@ -66,34 +78,54 @@ app.include_router(api.router, prefix=settings.api_prefix)
 app.include_router(collect.router, prefix=settings.api_prefix)
 
 
-@app.exception_handler(DatabaseConfigError)
-async def _database_config_error(_: Request, exc: DatabaseConfigError) -> JSONResponse:
-    """A bad ``DATABASE_URL`` is an operator error: say so instead of a bare 500.
+@app.exception_handler(StoreError)
+async def store_unavailable_handler(request, exc: StoreError):
+    """Storage problems are a 503 with a reason, never an opaque 500.
 
-    The store is initialised lazily, so this fires on the first request that
-    needs the database — the rest of the app (health, docs, demo data, the SPA)
-    keeps working while the environment variable gets fixed.
+    The scraper's own endpoints can fail — the dashboard must still be able to
+    tell the operator *why* instead of rendering "Internal Server Error".
     """
-    print(f"[apix] database configuration error: {exc}")
     return JSONResponse(
         status_code=503,
-        content={"detail": str(exc), "error": "database_misconfigured"},
-        headers={"Retry-After": "60"},
+        content={"detail": f"Collection store unavailable: {exc}", "store_error": True},
+    )
+
+
+@app.exception_handler(sqlite3.Error)
+async def sqlite_error_handler(request, exc: sqlite3.Error):
+    return JSONResponse(
+        status_code=503,
+        content={"detail": f"Collection store error: {type(exc).__name__}: {exc}", "store_error": True},
     )
 
 
 @app.get(settings.api_prefix + "/health", tags=["Health"])
 def health() -> dict:
-    """Liveness/readiness probe for orchestration and the frontend."""
+    """Liveness/readiness probe for orchestration and the frontend.
+
+    A probe must never 500 because a *subsystem* is misconfigured: the API is up
+    and serving the index, so it reports the collection store's state instead of
+    hiding behind an exception.
+    """
     ds = get_dataset()
-    ds = get_dataset()
+    try:
+        counts = collection_service.store.counts()
+        collector_running = bool(collection_service.background_running)
+    except Exception as exc:  # store misconfigured/unreachable — degrade, don't die
+        counts = {"available": False, "unavailable_reason": f"{type(exc).__name__}: {exc}"}
+        collector_running = False
     return {
         "status": "ok",
         "version": settings.version,
         "title": settings.title,
         "demo_mode": ds.origin != "live",
         "data_origin": ds.origin,
-        "collector_running": collection_service.background_running,
+        "collector_running": collector_running,
+        "collector_enabled": settings.collector_enabled,
+        "request_scoped_runtime": settings.request_scoped_runtime,
+        "store_backend": counts.get("backend", "unavailable"),
+        "store_available": bool(counts.get("available", False)),
+        "store_note": counts.get("note"),
         "uptime_seconds": round(time.time() - START_TIME, 1),
         "timestamp": ds.end_date.isoformat() + "T09:00:00+05:30",
         "period_start": ds.base_period_start.isoformat(),

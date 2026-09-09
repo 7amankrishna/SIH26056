@@ -47,20 +47,33 @@ class SweepBody(BaseModel):
 def get_data_source() -> dict:
     """Which dataset the dashboard is currently served from."""
     ds = get_dataset()
+    state = collection_service.status()
     return {
         "mode": collection_service.mode,
         "effective_mode": ds.origin,
         "has_live_data": collection_service.has_live_data,
         "collector_enabled": settings.collector_enabled,
         "background_running": collection_service.background_running,
-        "store": collection_service.store.counts(),
-        "sources": [s["id"] for s in collection_service.status()["sources"]],
+        "request_scoped_sweeps": state["request_scoped_sweeps"],
+        "store": state["store"],
+        "store_note": state["store_note"],
+        "sources": [s["id"] for s in state["sources"]],
     }
 
 
 @router.post("/data-source", response_model=schemas.DataSourceState)
 async def set_data_source(body: ModeBody) -> dict:
     """Flip the whole dashboard between scraped data and the demo dataset."""
+    if body.mode.strip().lower() == LIVE and not collection_service.store.available:
+        # Honest failure instead of a toggle that silently keeps serving demo data.
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Cannot serve scraped data: the collection store is unavailable. "
+                f"{collection_service.store.unavailable_reason or ''}"
+            ).strip(),
+        )
+
     try:
         result = collection_service.set_mode(body.mode)
     except ValueError as exc:
@@ -68,9 +81,21 @@ async def set_data_source(body: ModeBody) -> dict:
 
     # Switching to live with an empty store would show nothing; collect once so
     # the toggle produces an immediately meaningful screen instead of a spinner.
+    # Where no background loop survives (serverless), the sweep has to be awaited
+    # *here* — a fire-and-forget task is killed the moment the response returns.
     if body.mode.lower() == LIVE and not collection_service.has_live_data and collection_service.adapters:
-        collection_service.start_sweep(trigger="mode-switch")
-        result["note"] = "Live mode selected — a first sweep is running; the screens fill as it lands."
+        if collection_service.background_running:
+            collection_service.start_sweep(trigger="mode-switch")
+            result["note"] = "Live mode selected — a first sweep is running; the screens fill as it lands."
+        else:
+            sweep = await collection_service.run_sweep(trigger="mode-switch")
+            result["note"] = (
+                f"Live mode selected — first sweep collected {sweep.observations} observations "
+                f"({sweep.valid} index-eligible) in {sweep.duration_ms} ms."
+                + (f" {sweep.note}" if sweep.note else "")
+            )
+            if sweep.error:
+                result["note"] = f"Live mode selected but the first sweep failed: {sweep.error}"
     ds = get_dataset()
     state = collection_service.status()
     return {
@@ -79,7 +104,9 @@ async def set_data_source(body: ModeBody) -> dict:
         "has_live_data": collection_service.has_live_data,
         "collector_enabled": settings.collector_enabled,
         "background_running": collection_service.background_running,
+        "request_scoped_sweeps": state["request_scoped_sweeps"],
         "store": state["store"],
+        "store_note": state["store_note"],
         "sources": [s["id"] for s in state["sources"]],
     }
 
@@ -138,8 +165,10 @@ def collect_policy() -> dict:
 async def run_sweep(body: Optional[SweepBody] = None) -> dict:
     """Run a collection sweep now (the dashboard's "Collect now" button).
 
-    Returns immediately with the run id unless ``wait`` is set, in which case the
-    full result is returned — handy for tests and small manual checks.
+    Returns the full result when ``wait`` is set — and also when no background
+    loop exists to finish the work later (serverless runtimes freeze the process
+    the moment a response is returned, so an "accepted, poll later" answer would
+    never produce any data). Otherwise it returns immediately with the run queued.
     """
     body = body or SweepBody()
     if not collection_service.adapters:
@@ -156,15 +185,19 @@ async def run_sweep(body: Optional[SweepBody] = None) -> dict:
         # Scoped to this request only — the scheduled sweep keeps its own ladder.
         settings.sweep_lead_times = [int(x) for x in body.lead_times if int(x) > 0]
 
-    if body.wait:
+    in_request = body.wait or not collection_service.background_running
+    if in_request:
         result = await collection_service.run_sweep(
             source_ids=body.sources, trigger="manual", routes=body.routes
         )
-        return result.as_dict()
+        payload = result.as_dict()
+        payload["synchronous"] = True
+        return payload
 
     collection_service.start_sweep(source_ids=body.sources, trigger="manual", routes=body.routes)
     return {
         "accepted": True,
+        "synchronous": False,
         "detail": "sweep scheduled in the background; poll /api/collect/status or /api/collect/runs",
     }
 

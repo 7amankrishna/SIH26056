@@ -96,6 +96,10 @@ export default {
           50: v("--purple-50"),
           700: v("--purple-700"),
         },
+        violet: {
+          50: v("--violet-50"),
+          700: v("--violet-700"),
+        },
         orange: {
           50: v("--orange-50"),
           700: v("--orange-700"),

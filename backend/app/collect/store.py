@@ -1,7 +1,8 @@
 """SQLite and Postgres persistence for collected data.
 
-Stdlib ``sqlite3`` on purpose for local: no service to provision, works on a laptop
-offline. Postgres via psycopg2 (``DATABASE_URL``) for Vercel/production. Three tables:
+Stdlib ``sqlite3`` for local and the Vercel demo: no service to provision, works
+offline. Vercel ignores ``DATABASE_URL`` by default; set
+``APIX_IGNORE_DATABASE_URL=0`` to opt in to Postgres via psycopg2. Three tables:
 
     collection_runs   one row per sweep per source, incl. blocked/failed runs
     raw_payloads      the payload *exactly as received* (never rewritten)
@@ -9,12 +10,6 @@ offline. Postgres via psycopg2 (``DATABASE_URL``) for Vercel/production. Three t
 
 Plus ``apix_state`` — a tiny KV table that persists the dashboard's data-source
 toggle so the selection survives a restart.
-
-Initialisation is **lazy**. A :class:`Store` is created while the app is being
-imported (the ``collection_service`` singleton), and on Vercel a failure at import
-time takes the whole function down — health checks, docs and the SPA included.
-So ``Store.__init__`` does no I/O at all: the connection, the schema and the
-``DATABASE_URL`` validation all happen in :meth:`Store._ensure_init` on first use.
 """
 
 from __future__ import annotations
@@ -22,7 +17,6 @@ from __future__ import annotations
 import os
 import datetime as dt
 import json
-import re
 import sqlite3
 import threading
 from contextlib import contextmanager
@@ -34,160 +28,96 @@ from urllib.parse import urlsplit
 try:
     import psycopg2
     import psycopg2.extras
-    _PSYCOPG2_IMPORT_ERROR: Optional[str] = None
-except ImportError as _exc:  # pragma: no cover - depends on the environment
+except ImportError:
     psycopg2 = None
-    _PSYCOPG2_IMPORT_ERROR = str(_exc)
 
 from ..config import settings
 
 SCHEMA_VERSION = 1
 
 
-def _env_int(name: str, default: int) -> int:
-    """Lenient int env parsing — a typo here must never break module import."""
-    try:
-        return int(os.environ.get(name, "").strip() or default)
-    except ValueError:
-        return default
+class StoreError(RuntimeError):
+    """Base class for store failures the API reports instead of crashing on."""
 
 
-#: Seconds psycopg2 waits for a TCP connection before giving up (libpq's
-#: default is "forever", which on a serverless runtime means a hung request).
-PG_CONNECT_TIMEOUT_SECONDS = _env_int("APIX_PG_CONNECT_TIMEOUT_SECONDS", 10)
+class StoreConfigurationError(StoreError):
+    """Raised when the deployment database configuration is unsafe or unusable."""
 
 
-# --------------------------------------------------------------------------- #
-# DATABASE_URL handling
-# --------------------------------------------------------------------------- #
-
-class DatabaseConfigError(RuntimeError):
-    """``DATABASE_URL`` is set to something that is not a usable Postgres DSN.
-
-    Raised lazily (on first store access), never at import time, and always
-    *before* the value reaches ``psycopg2`` so the message stays actionable.
-    """
+class StoreConnectionError(StoreError):
+    """Raised when a configured database exists but cannot be reached."""
 
 
-_PG_SCHEMES = {"postgres", "postgresql"}
-# github.com / *.github.com / raw.githubusercontent.com / *.github.io ...
-_GITHUB_HOST_RE = re.compile(r"^(?:[\w-]+\.)*(?:github\.com|githubusercontent\.com|github\.io)$", re.IGNORECASE)
-# ... in any of the shapes people paste: https://, git@github.com:, ssh://, bare "github.com/…".
-_GITHUB_RE = re.compile(
-    r"(?:^|[/@.\s=])(?:github\.com|githubusercontent\.com|github\.io)(?=$|[/:?#])",
-    re.IGNORECASE,
-)
-# libpq keyword/value form: "host=db.example.com dbname=apix user=…"
-_KV_DSN_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*\s*=\s*\S")
-_KV_HOST_RE = re.compile(r"\bhost(?:addr)?\s*=", re.IGNORECASE)
-_KV_HOST_VALUE_RE = re.compile(r"\bhost\s*=\s*'?([^\s']+)", re.IGNORECASE)
-_CONNECT_TIMEOUT_RE = re.compile(r"\bconnect_timeout\s*=", re.IGNORECASE)
-_URL_PASSWORD_RE = re.compile(r"^([a-z][a-z0-9+.\-]*://[^/@]*?:)[^@]*@", re.IGNORECASE)
-_KV_PASSWORD_RE = re.compile(r"(password\s*=\s*)\S+", re.IGNORECASE)
-_ENV_LINE_PREFIX_RE = re.compile(r"^(?:export\s+)?DATABASE_URL\s*=\s*", re.IGNORECASE)
-
-# Vercel's function bundle is read-only; /tmp is the only writable location.
-_VERCEL_TMP_DIR = Path("/tmp/apix-data")
-
-_DSN_EXAMPLE = "postgresql://USER:PASSWORD@HOST:5432/DBNAME?sslmode=require"
-_VERCEL_HINT = (
-    " On Vercel: Project -> Settings -> Environment Variables -> DATABASE_URL, then redeploy. "
-    "Remove the variable to fall back to ephemeral SQLite under /tmp."
-)
-_LOCAL_HINT = " Unset DATABASE_URL to use the local SQLite store."
+def _vercel_environment() -> bool:
+    return any(os.getenv(name, "").strip() for name in ("VERCEL", "VERCEL_ENV"))
 
 
-def _is_vercel() -> bool:
-    """True inside a Vercel build or function (Vercel sets ``VERCEL=1``)."""
-    return os.environ.get("VERCEL", "").strip().lower() in {"1", "true", "yes", "on"}
-
-
-def _ensure_writable_dir(directory: Path) -> None:
-    """Create ``directory`` if needed and prove it is writable (raises OSError)."""
-    directory.mkdir(parents=True, exist_ok=True)
-    if not os.access(directory, os.W_OK):
-        raise PermissionError(f"{directory} is not writable")
-
-
-def _redact(value: str, limit: int = 96) -> str:
-    """Mask the password and cap the length so a bad DSN can be logged safely."""
-    shown = _URL_PASSWORD_RE.sub(r"\1***@", value, count=1)
-    shown = _KV_PASSWORD_RE.sub(r"\1***", shown)
-    return shown if len(shown) <= limit else shown[: limit - 3] + "..."
-
-
-def parse_database_url(raw: Optional[str], *, vercel: Optional[bool] = None) -> Optional[str]:
-    """Validate ``DATABASE_URL`` and return the DSN to hand to psycopg2.
-
-    Returns ``None`` when the variable is unset or blank (the store then uses
-    SQLite). Raises :class:`DatabaseConfigError` — nothing else — for anything
-    that is not recognisably a PostgreSQL connection string, so a bad value is
-    never passed on to psycopg2. The classic mistake is pasting the repository's
-    GitHub URL into the Vercel env var, which psycopg2 would otherwise report as
-    an opaque ``invalid dsn: missing "="``.
-
-    On Vercel (``vercel=True``, default: detected from ``VERCEL=1``) the error
-    messages point at the project settings and a host is mandatory, since a
-    serverless function has no local Postgres to fall back to.
-    """
-    if vercel is None:
-        vercel = _is_vercel()
-    if raw is None:
-        return None
-    value = raw.strip()
-    # A value pasted from a .env file sometimes keeps its "KEY=" prefix or quotes.
-    value = _ENV_LINE_PREFIX_RE.sub("", value, count=1)
-    if len(value) >= 2 and value[0] == value[-1] and value[0] in "'\"":
-        value = value[1:-1].strip()
-    if not value:
-        return None
-
-    hint = _VERCEL_HINT if vercel else _LOCAL_HINT
-    shown = _redact(value)
-    no_host = (
-        f"DATABASE_URL has no host ({shown}). On Vercel there is no local Postgres: "
-        f"the DSN must point at a managed database such as Neon or Supabase.{hint}"
+def _production_environment() -> bool:
+    """Detect hosted production contexts without importing application settings."""
+    if _vercel_environment():
+        return True
+    return any(
+        os.getenv(name, "").strip().lower() in {"production", "prod"}
+        for name in ("APIX_ENV", "APP_ENV", "ENVIRONMENT", "PYTHON_ENV")
     )
 
-    github = DatabaseConfigError(
-        f"DATABASE_URL looks like a GitHub URL ({shown}), not a PostgreSQL connection "
-        f"string. GitHub is not a database host; set it to your Postgres DSN, "
-        f"e.g. {_DSN_EXAMPLE}.{hint}"
-    )
 
-    if _KV_DSN_RE.match(value):
-        # libpq keyword/value DSN ("host=… dbname=…") — psycopg2 accepts it as-is.
-        m = _KV_HOST_VALUE_RE.search(value)
-        if m and _GITHUB_HOST_RE.match(m.group(1)):
-            raise github
-        if vercel and not _KV_HOST_RE.search(value):
-            raise DatabaseConfigError(no_host)
-        return value
+def _ignore_database_url() -> bool:
+    """Keep the Vercel demo independent of stale/injected database credentials.
 
-    try:
-        parts = urlsplit(value)
-        host = parts.hostname or ""
-    except ValueError as exc:
-        raise DatabaseConfigError(
-            f"DATABASE_URL could not be parsed ({shown}): {exc}. Expected {_DSN_EXAMPLE}.{hint}"
-        ) from exc
-    scheme = parts.scheme.lower()
+    No Vercel settings change is needed to recover the demo. Operators who want
+    PostgreSQL explicitly set APIX_IGNORE_DATABASE_URL=0; other deployments keep
+    honouring DATABASE_URL by default. An empty flag uses the platform default.
+    """
+    default = "1" if _vercel_environment() else "0"
+    value = os.getenv("APIX_IGNORE_DATABASE_URL", "").strip() or default
+    return value.lower() in {"1", "true", "yes", "on"}
 
-    # The classic paste error. Check the host when we have a proper URL; for the
-    # scp-like / scheme-less shapes fall back to scanning the whole string.
-    if _GITHUB_HOST_RE.match(host) or (scheme not in _PG_SCHEMES and _GITHUB_RE.search(value)):
-        raise github
 
-    if scheme not in _PG_SCHEMES:
-        what = f"scheme '{scheme}'" if scheme else "no URL scheme"
-        raise DatabaseConfigError(
-            f"DATABASE_URL must be a PostgreSQL connection string ({_DSN_EXAMPLE}); "
-            f"got {what} ({shown}).{hint}"
+POSTGRES_STORE_HINT = (
+    "For durable collection history, set APIX_IGNORE_DATABASE_URL=0 and DATABASE_URL "
+    "to a PostgreSQL database."
+)
+EPHEMERAL_STORE_NOTE = (
+    "Ephemeral serverless store: SQLite under the only writable path (/tmp), so collected "
+    "data is per-instance and is lost on a cold start or redeploy. "
+    + POSTGRES_STORE_HINT
+)
+
+
+def validate_database_url(value: str) -> str:
+    """Validate a psycopg2 connection URI or keyword DSN without exposing it."""
+    database_url = value.strip()
+    if not database_url:
+        raise StoreConfigurationError("DATABASE_URL must not be empty.")
+
+    if "://" in database_url:
+        parsed = urlsplit(database_url)
+        if parsed.scheme.lower() not in {"postgres", "postgresql"}:
+            raise StoreConfigurationError(
+                "DATABASE_URL must be a PostgreSQL connection URL."
+            )
+        if not parsed.netloc and not parsed.path:
+            raise StoreConfigurationError("DATABASE_URL is not a valid PostgreSQL URL.")
+        return database_url
+
+    # psycopg2 also accepts keyword DSNs such as "dbname=app host=db user=...".
+    # Reject filesystem paths and opaque values before handing them to the driver.
+    if "=" not in database_url or database_url.startswith(("/", "./", "../", "~")):
+        raise StoreConfigurationError(
+            "DATABASE_URL must be a PostgreSQL URL or keyword DSN."
         )
-    if vercel and not host and not _KV_HOST_RE.search(parts.query):
-        raise DatabaseConfigError(no_host)
-    return value
-
+    if psycopg2 is None:
+        raise StoreConfigurationError(
+            "DATABASE_URL is configured but psycopg2-binary is not installed."
+        )
+    try:
+        parsed_dsn = psycopg2.extensions.parse_dsn(database_url)
+    except Exception as exc:
+        raise StoreConfigurationError("DATABASE_URL is not a valid PostgreSQL DSN.") from exc
+    if not parsed_dsn.get("dbname") and not parsed_dsn.get("service"):
+        raise StoreConfigurationError("DATABASE_URL DSN must specify a database.")
+    return database_url
 
 OBS_COLUMNS = (
     "observation_id", "source", "origin", "destination", "route", "departure_date",
@@ -314,187 +244,194 @@ class StoredRun:
             "trigger": self.trigger,
         }
 
-class _PgConn:
-    """Minimal ``sqlite3.Connection`` lookalike over a psycopg2 cursor.
 
-    The store is written against SQLite's dialect; this rewrites the handful of
-    constructs that differ so both backends share a single code path.
-    """
+# --------------------------------------------------------------------------- #
+# Degraded mode: a store that could not be configured answers every read with an
+# empty result and swallows every write, so one missing DATABASE_URL cannot take
+# the whole API down with it. `counts()` still says *why*, and the UI shows it.
+# --------------------------------------------------------------------------- #
 
-    def __init__(self, conn: Any, cur: Any) -> None:
-        self._conn = conn
-        self._cur = cur
 
-    @staticmethod
-    def _translate(q: str) -> str:
-        q = q.replace("?", "%s")
-        q = q.replace("INSERT OR IGNORE", "INSERT")
-        if "INSERT INTO observations" in q:
-            q += " ON CONFLICT DO NOTHING"
-        return q
+class _NullRow(dict):
+    """Row-shaped object that reports 0/None for any column asked of it."""
 
-    def execute(self, q: str, args: Any = ()) -> Any:
-        q = self._translate(q)
-        # SQLite date() arithmetic -> Postgres casts.
-        q = q.replace(
-            "date(collection_date) <= date(%s)",
-            "CAST(collection_date AS DATE) <= CAST(%s AS DATE)",
-        )
-        q = q.replace(
-            "date(collection_date) >= date(%s, '-' || %s || ' day')",
-            "CAST(collection_date AS DATE) >= CAST(%s AS DATE) - CAST(%s || ' days' AS INTERVAL)",
-        )
-        q = q.replace(
-            "date(collection_date) >= date(%s)",
-            "CAST(collection_date AS DATE) >= CAST(%s AS DATE)",
-        )
-        self._cur.execute(q, args)
-        return self._cur
+    def __missing__(self, key: str) -> Any:  # noqa: D105
+        return 0
 
-    def executemany(self, q: str, args_list: Iterable[Any]) -> Any:
-        self._cur.executemany(self._translate(q), args_list)
-        return self._cur
 
-    def executescript(self, q: str) -> Any:
-        for stmt in q.split(";"):
-            if stmt.strip():
-                self._cur.execute(stmt)
-        return self._cur
+class _NullCursor:
+    rowcount = 0
+
+    def fetchone(self) -> _NullRow:
+        # Empty-but-row-shaped: `COUNT(*)` reads answer 0 and truthiness stays
+        # False, so `get_state()` still returns its default.
+        return _NullRow()
+
+    def fetchall(self) -> list[Any]:
+        return []
+
+    def keys(self) -> list[str]:
+        return []
+
+
+class _NullConnection:
+    def execute(self, q: str, args: Any = ()) -> _NullCursor:
+        return _NullCursor()
+
+    def executemany(self, q: str, args_list: Any) -> _NullCursor:
+        return _NullCursor()
+
+    def executescript(self, q: str) -> _NullCursor:
+        return _NullCursor()
 
     def commit(self) -> None:
-        self._conn.commit()
+        return None
 
     def close(self) -> None:
-        self._conn.close()
+        return None
 
 
 class Store:
-    """Persistence facade over SQLite (local) or Postgres (``DATABASE_URL``).
+    """Persistence for the collection engine.
 
-    Construction has **no side effects**: no directory is created, no connection
-    is opened and ``DATABASE_URL`` is not even read until the first query. That
-    keeps ``import app.main`` safe on Vercel, where a misconfigured database must
-    surface as a clear error on the affected requests — not as a crashed function.
-
-    An explicit ``path`` pins the store to that SQLite file even when
-    ``DATABASE_URL`` is set, so a test run can never write to a real database.
+    Construction never takes the API down: a deployment whose database is not
+    configured (or whose filesystem is read-only) yields an *unavailable* store
+    that answers every read with an empty result and every write with a no-op,
+    and says why in :meth:`counts`. Endpoints then report a clear 503/``note``
+    instead of an opaque 500 on every screen — a broken scraper must degrade the
+    scraper, not the dashboard.
     """
 
     def __init__(self, path: Optional[Path] = None):
-        self._explicit_path: Optional[Path] = Path(path) if path is not None else None
-        #: Resolved lazily by :meth:`_ensure_init`; exactly one of the two is set.
+        self._write_lock = threading.Lock()
+        self._unavailable_reason: Optional[str] = None
+        #: True when SQLite is standing in for durable storage on a hosted runtime.
+        self.ephemeral = False
+        self.ignore_database_url = _ignore_database_url()
         self.db_url: Optional[str] = None
         self.path: Optional[Path] = None
-        # RLock on purpose: see _ensure_init for why initialisation is re-entrant.
-        self._init_lock = threading.RLock()
-        self._initialized = False
-        self._initializing = False
-        self._write_lock = threading.Lock()
+        self.backend = "sqlite"
+        try:
+            self._configure(path)
+        except StoreConfigurationError as exc:
+            # Fail closed (nothing is written anywhere) but stay up: the reason is
+            # surfaced through the API instead of as an unhandled exception.
+            self._unavailable_reason = str(exc)
+            self.backend = "unavailable"
+            return
+        self._init()
+
+    def _configure(self, path: Optional[Path]) -> None:
+        # Decide before reading, validating or connecting: even a valid-looking
+        # but unreachable DATABASE_URL must not disable the Vercel demo.
+        configured_url = "" if self.ignore_database_url else os.environ.get("DATABASE_URL", "").strip()
+        if configured_url:
+            # When PostgreSQL is enabled, retain fail-closed behaviour: a broken
+            # durable store must not silently become an ephemeral one.
+            self.db_url = validate_database_url(configured_url)
+            self.backend = "postgresql"
+            if not psycopg2:
+                raise StoreConfigurationError(
+                    "DATABASE_URL is configured but psycopg2-binary is not installed."
+                )
+            return
+
+        self.backend = "sqlite"
+        # On a hosted/serverless runtime SQLite is allowed, but only as an
+        # explicitly labelled ephemeral store: it lives under the one writable
+        # path and is thrown away with the instance.
+        self.ephemeral = _production_environment()
+        candidate = Path(path or settings.data_dir / "apix.sqlite3")
+        try:
+            candidate.parent.mkdir(parents=True, exist_ok=True)
+            probe = candidate.parent / ".apix-write-probe"
+            probe.write_text("ok", encoding="utf-8")
+            probe.unlink()
+        except OSError as exc:
+            raise StoreConfigurationError(
+                f"SQLite collection store is not writable at {candidate} ({type(exc).__name__}: {exc}). "
+                "Set APIX_DATA_DIR to a writable path (on Vercel: /tmp/apix-data), or set "
+                "APIX_IGNORE_DATABASE_URL=0 and DATABASE_URL to a PostgreSQL database."
+            ) from exc
+        self.path = candidate
+
+    # -- availability ----------------------------------------------------- #
+    @property
+    def available(self) -> bool:
+        """False when no database could be configured at all."""
+        return self._unavailable_reason is None
 
     @property
-    def initialized(self) -> bool:
-        """True once the backend is resolved and the schema exists."""
-        return self._initialized
+    def unavailable_reason(self) -> Optional[str]:
+        return self._unavailable_reason
 
-    # ------------------------------------------------------------------ #
-    # Lazy initialisation
-    # ------------------------------------------------------------------ #
-    def _ensure_init(self) -> None:
-        """Resolve the backend and create the schema — once, on first use.
+    @property
+    def durable(self) -> bool:
+        """Only Postgres survives a redeploy; SQLite on serverless does not."""
+        return self.backend == "postgresql"
 
-        Thread-safe (double-checked under ``_init_lock``) and retryable: if the
-        database is misconfigured or unreachable the exception propagates to the
-        caller, nothing is cached, and the next call simply tries again. The lock
-        is an ``RLock`` so a re-entrant call from the initialising thread (anything
-        that reaches ``_connect`` while the schema is being created) becomes a
-        no-op instead of a deadlock or an infinite recursion.
-        """
-        if self._initialized:
-            return
-        with self._init_lock:
-            if self._initialized or self._initializing:
-                return
-            self._initializing = True
-            try:
-                self._resolve_backend()
-                self._create_schema()
-                self._initialized = True
-            finally:
-                self._initializing = False
-
-    def _resolve_backend(self) -> None:
-        """Pick Postgres or SQLite. Validates configuration, opens no connection."""
-        if self._explicit_path is not None:
-            self.db_url, self.path = None, self._explicit_path
-        else:
-            self.db_url = parse_database_url(os.environ.get("DATABASE_URL"))
-            self.path = None if self.db_url else Path(settings.data_dir) / "apix.sqlite3"
-
-        if self.db_url:
-            if psycopg2 is None:
-                raise DatabaseConfigError(
-                    "DATABASE_URL is set but psycopg2 could not be imported "
-                    f"({_PSYCOPG2_IMPORT_ERROR}). Add psycopg2-binary==2.9.10 to "
-                    "api/requirements.txt (Vercel) and backend/requirements.txt, "
-                    "or unset DATABASE_URL to use SQLite."
-                )
-        else:
-            self.path = self._prepare_sqlite_path(self.path)
-
-    def _prepare_sqlite_path(self, path: Path) -> Path:
-        """Make sure the SQLite directory exists and is writable.
-
-        Vercel's function bundle is read-only, so when the configured directory
-        cannot be used there we fall back to ``/tmp`` (ephemeral, per instance)
-        rather than failing every request. An explicit path is never redirected.
-        """
-        try:
-            _ensure_writable_dir(path.parent)
-            return path
-        except OSError as exc:
-            if self._explicit_path is not None or not _is_vercel():
-                raise
-            fallback = _VERCEL_TMP_DIR / path.name
-            _ensure_writable_dir(fallback.parent)
-            print(
-                f"[apix] {path.parent} is not writable on Vercel ({exc}); using {fallback} "
-                "(ephemeral). Set DATABASE_URL for durable storage."
-            )
-            return fallback
-
-    def _create_schema(self) -> None:
-        schema = _SCHEMA
-        if self.db_url:
-            schema = schema.replace("INTEGER PRIMARY KEY AUTOINCREMENT", "SERIAL PRIMARY KEY")
-        with self._open() as conn:
-            conn.executescript(schema)
-            row = conn.execute("SELECT value FROM schema_meta WHERE key='version'").fetchone()
-            if row is None:
-                conn.execute("INSERT INTO schema_meta(key,value) VALUES('version',?)", (str(SCHEMA_VERSION),))
-            conn.commit()
-
-    # ------------------------------------------------------------------ #
-    # Connections
-    # ------------------------------------------------------------------ #
-    def _pg_connect_kwargs(self) -> dict[str, Any]:
-        # libpq waits forever by default; on a serverless runtime that turns an
-        # unreachable database into a hung request. An explicit value in the DSN wins.
-        if _CONNECT_TIMEOUT_RE.search(self.db_url or ""):
-            return {}
-        return {"connect_timeout": PG_CONNECT_TIMEOUT_SECONDS}
+    @property
+    def note(self) -> Optional[str]:
+        notes = []
+        if self.ignore_database_url:
+            notes.append("DATABASE_URL is ignored (APIX_IGNORE_DATABASE_URL=1; default on Vercel).")
+        if not self.available:
+            notes.append(f"Collection store unavailable — {self._unavailable_reason}")
+        elif self.ephemeral:
+            notes.append(EPHEMERAL_STORE_NOTE)
+        elif self.ignore_database_url:
+            notes.append(f"Using SQLite. {POSTGRES_STORE_HINT}")
+        return " ".join(notes) or None
 
     @contextmanager
-    def _open(self):
-        """Open a raw connection to the resolved backend (no initialisation)."""
+    def _connect(self):
+        if not self.available:
+            yield _NullConnection()
+            return
         if self.db_url:
-            conn = psycopg2.connect(self.db_url, **self._pg_connect_kwargs())
             try:
-                with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-                    yield _PgConn(conn, cur)
-            finally:
-                conn.close()
+                conn = psycopg2.connect(
+                    self.db_url,
+                    connect_timeout=int(os.getenv("APIX_DB_CONNECT_TIMEOUT_SECONDS", "5")),
+                )
+            except Exception as exc:  # never echo the DSN (it carries credentials)
+                raise StoreConnectionError(
+                    f"PostgreSQL is configured but could not be reached: {type(exc).__name__}"
+                ) from exc
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                class PseudoConn:
+                    def execute(self, q, args=()):
+                        q = q.replace("?", "%s")
+                        q = q.replace("INSERT OR IGNORE", "INSERT")
+                        if "INSERT INTO observations" in q:
+                            q += " ON CONFLICT DO NOTHING"
+                        # special SQLite date logic
+                        q = q.replace("date(collection_date) <= date(%s)", "CAST(collection_date AS DATE) <= CAST(%s AS DATE)")
+                        q = q.replace("date(collection_date) >= date(%s, '-' || %s || ' day')", "CAST(collection_date AS DATE) >= CAST(%s AS DATE) - CAST(%s || ' days' AS INTERVAL)")
+                        q = q.replace("date(collection_date) >= date(%s)", "CAST(collection_date AS DATE) >= CAST(%s AS DATE)")
+                        cur.execute(q, args)
+                        return cur
+                    def executemany(self, q, args_list):
+                        q = q.replace("?", "%s")
+                        q = q.replace("INSERT OR IGNORE", "INSERT")
+                        if "INSERT INTO observations" in q:
+                            q += " ON CONFLICT DO NOTHING"
+                        cur.executemany(q, args_list)
+                        return cur
+                    def commit(self): conn.commit()
+                    def close(self): conn.close()
+                    def executescript(self, q):
+                        for stmt in q.split(";"):
+                            if stmt.strip():
+                                cur.execute(stmt)
+                        return cur
+                yield PseudoConn()
+            conn.close()
         else:
-            conn = sqlite3.connect(str(self.path), timeout=20.0, check_same_thread=False)
+            try:
+                conn = sqlite3.connect(str(self.path), timeout=20.0, check_same_thread=False)
+            except sqlite3.Error as exc:
+                raise StoreConnectionError(f"SQLite store at {self.path} could not be opened: {exc}") from exc
             conn.row_factory = sqlite3.Row
             try:
                 conn.execute("PRAGMA journal_mode=WAL")
@@ -503,16 +440,21 @@ class Store:
             finally:
                 conn.close()
 
-    @contextmanager
-    def _connect(self):
-        """Initialise on first use, then hand out a connection."""
-        self._ensure_init()
-        with self._open() as conn:
-            yield conn
+    def _init(self) -> None:
+        with self._write_lock, self._connect() as conn:
+            schema = _SCHEMA
+            if self.db_url:
+                schema = schema.replace("INTEGER PRIMARY KEY AUTOINCREMENT", "SERIAL PRIMARY KEY")
+                conn.executescript(schema)
+            else:
+                conn.executescript(schema)
+            
+            cur = conn.execute("SELECT value FROM schema_meta WHERE key='version'")
+            row = cur.fetchone()
+            if row is None:
+                conn.execute("INSERT INTO schema_meta(key,value) VALUES('version',?)", (str(SCHEMA_VERSION),))
+            conn.commit()
 
-    # ------------------------------------------------------------------ #
-    # Data access
-    # ------------------------------------------------------------------ #
     def reset(self) -> None:
         with self._write_lock, self._connect() as conn:
             for t in ("collection_runs", "raw_payloads", "observations", "apix_state"):
@@ -591,6 +533,8 @@ class Store:
             for o in offers
         ]
         if not rows:
+            return 0
+        if not self.available:
             return 0
         with self._write_lock, self._connect() as conn:
             conn.executemany(
@@ -726,7 +670,15 @@ class Store:
             "days_collected": days,
             "by_status": statuses,
             "db_bytes": size,
-            "db_path": "postgres" if self.db_url else str(self.path),
+            "db_path": str(self.path) if self.path else self.backend,
+            # Storage health, so the API/UI can say what the scraper can persist.
+            "available": self.available,
+            "backend": self.backend,
+            "durable": self.durable,
+            "ephemeral": self.ephemeral,
+            "ignores_database_url": self.ignore_database_url,
+            "unavailable_reason": self._unavailable_reason,
+            "note": self.note,
         }
 
     def sources_seen(self) -> list[str]:
@@ -742,12 +694,6 @@ _store: Optional[Store] = None
 _store_lock = threading.Lock()
 
 def get_store() -> Store:
-    """Process-wide store singleton.
-
-    Cheap and side-effect free: constructing a :class:`Store` touches neither the
-    filesystem nor the network, so this is safe to call at import time. The
-    backend is initialised lazily on the first query.
-    """
     global _store
     with _store_lock:
         if _store is None:

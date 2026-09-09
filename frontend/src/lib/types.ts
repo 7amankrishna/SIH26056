@@ -280,6 +280,17 @@ export interface StoreCounts {
   by_status: Record<string, number>;
   db_bytes: number;
   db_path?: string;
+  /** false when no database could be configured: the scraper cannot persist anything. */
+  available?: boolean;
+  backend?: "sqlite" | "postgresql" | "unavailable" | string;
+  /** true only for PostgreSQL — SQLite on a serverless runtime dies with the instance. */
+  durable?: boolean;
+  ephemeral?: boolean;
+  /** DATABASE_URL is intentionally ignored; defaults to true for the Vercel demo. */
+  ignores_database_url?: boolean;
+  unavailable_reason?: string | null;
+  /** Human-readable storage caveat, safe to show verbatim. */
+  note?: string | null;
 }
 
 export interface DataSourceState {
@@ -291,7 +302,10 @@ export interface DataSourceState {
   locked?: boolean;
   collector_enabled: boolean;
   background_running: boolean;
+  /** No loop survives between requests (serverless): a sweep runs inside the POST. */
+  request_scoped_sweeps?: boolean;
   store: StoreCounts;
+  store_note?: string | null;
   sources: string[];
   note?: string | null;
   updated_at?: string | null;
@@ -344,6 +358,10 @@ export interface CollectStatus {
   effective_mode: DataMode;
   collector_enabled: boolean;
   background_running: boolean;
+  request_scoped_sweeps?: boolean;
+  request_sweep_query_cap?: number | null;
+  store_note?: string | null;
+  store_available?: boolean;
   sweep_interval_seconds: number;
   current_run?: Record<string, unknown> | null;
   store: StoreCounts;
@@ -421,5 +439,16 @@ export interface SweepResult {
   requests: number;
   duration_ms: number;
   error?: string | null;
+  /** Set when the sweep had to be shortened to fit inside one request. */
+  note?: string | null;
+  /** true when the backend ran the sweep inside this request instead of queueing it. */
+  synchronous?: boolean;
   sources: Record<string, { status: string; detail?: string; observations?: number; queries?: number }>;
+}
+
+/** Shape returned when a sweep is queued for the background loop instead. */
+export interface SweepAccepted {
+  accepted?: boolean;
+  synchronous?: boolean;
+  detail?: string;
 }

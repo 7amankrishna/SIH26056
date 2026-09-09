@@ -18,7 +18,7 @@ consumer.
 
 | Method | Path | Description |
 | --- | --- | --- |
-| `GET` | `/health` | Liveness, version, demo mode, uptime, data window. |
+| `GET` | `/health` | Liveness, version, demo mode, uptime, data window, collection-store health. Never fails because the scraper's storage is misconfigured. |
 | `GET` | `/overview` | Headline KPI envelope (APIx, 24h/7d/30d movement, coverage). |
 | `GET` | `/index` | Current index (same envelope as overview). |
 | `GET` | `/index/trend?range=` | Time-series of APIx. `range` ∈ `7d \| 30d \| 90d \| 6m \| 1y`. |
@@ -41,10 +41,10 @@ consumer.
 
 | Method | Path | Description |
 | --- | --- | --- |
-| `GET` | `/data-source` | Which dataset the dashboard is served from (`live` scraped / `demo`), store counts, registered sources. |
-| `POST` | `/data-source` | `{"mode":"live"\|"demo"}` — flips the source for **every** screen; persisted so it survives a restart. `409` if `APIX_DATA_MODE` pins it. |
-| `GET` | `/collect/status` | Engine state: mode, scheduler, per-source health, circuit breaker, politeness settings, store totals. |
-| `POST` | `/collect/sweep` | Run a collection sweep. Body: `sources`, `routes`, `lead_times`, `wait`. Returns immediately unless `wait`. `409` when no adapter is enabled. |
+| `GET` | `/data-source` | Which dataset the dashboard is served from (`live` scraped / `demo`), store counts + health, `request_scoped_sweeps`, registered sources. |
+| `POST` | `/data-source` | `{"mode":"live"\|"demo"}` — flips the source for **every** screen; persisted so it survives a restart. Switching to `live` with an empty store collects once before answering (awaited when no background loop survives). `409` if `APIX_DATA_MODE` pins it; `503` if nothing can be persisted. |
+| `GET` | `/collect/status` | Engine state: mode, scheduler, per-source health, circuit breaker, politeness settings, store totals/health, in-request sweep sizing. |
+| `POST` | `/collect/sweep` | Run a collection sweep. Body: `sources`, `routes`, `lead_times`, `wait`. Returns the finished sweep (`synchronous: true`) when `wait` is set **or** when the runtime has no surviving background loop; otherwise `{"accepted": true}`. `409` when no adapter is enabled. |
 | `GET` | `/collect/runs` | Run log — `success` / `partial` / `blocked` / `failed`, per-run query, request, observation and failure counts. |
 | `GET` | `/collect/payloads` | **Raw responses exactly as collected** (verbatim JSON body, URL, HTTP status, latency, query). |
 | `GET` | `/collect/fares` | Normalized canonical observations with quality status and exclusion reason. |
@@ -84,6 +84,22 @@ Errors return a safe, human-readable message rather than a bare 500. Example:
 ```json
 { "detail": "Route index unavailable — no valid observations for DEL-BOM." }
 ```
+
+Storage problems are reported, not crashed on:
+
+| Status | When | Body |
+| --- | --- | --- |
+| `503` | The collection store is unavailable (invalid `DATABASE_URL` when enabled, unwritable data dir) or the configured PostgreSQL cannot be reached. | `{"detail": "Collection store unavailable: …", "store_error": true}` |
+| `200` | Same conditions, on a *read* endpoint: the store degrades to empty and says why. | `store.available: false`, `store.unavailable_reason`, `store.note` |
+| `409` | No collection adapter is enabled (`APIX_COLLECTOR_SOURCES`). | `{"detail": "No collection adapter is enabled. …"}` |
+
+Every store description carries `backend` (`sqlite` / `postgresql` /
+`unavailable`), `durable`, `ephemeral`, `ignores_database_url` and a human-readable
+`note`, so a consumer can tell a durable collection history from a per-instance
+serverless one. Vercel defaults to `ignores_database_url: true`: the SQLite demo
+works even if `DATABASE_URL` is malformed or unreachable. Set
+`APIX_IGNORE_DATABASE_URL=0` to opt in to PostgreSQL; only then do database URL
+validation/connection failures apply. The note never includes the URL or credentials.
 
 Full parameter and schema documentation is available in the OpenAPI schema at
 `/openapi.json` and the interactive `/docs`.

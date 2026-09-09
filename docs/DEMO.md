@@ -77,6 +77,19 @@ the substitute (Amadeus self-service API, licensed feeds, permissioned pages),
 with the same pipeline and the same audit trail. Rehearse that answer; a judge who
 asks it is testing whether you thought about it.
 
+### On the deployed (Vercel) URL
+
+The same story works on a public deployment. Vercel has no process lifetime for a
+background loop, so the collector runs the sweep **inside** the request: point the
+switch at **Scraper** and the toggle returns after the first sweep has landed,
+with the observations already on screen. The Live Feed shows a
+**sweeps run in-request** chip and an amber **Ephemeral collection store
+(serverless /tmp)** banner — say it out loud, it is a property of the platform,
+not a broken scraper: collected history resets on a cold start or redeploy unless
+`APIX_IGNORE_DATABASE_URL=0` is set and `DATABASE_URL` points at a PostgreSQL
+database. By default Vercel ignores `DATABASE_URL`, so a leftover value does not
+stop a demo sweep.
+
 A live store only has the days it has collected. APIx is rebased to 100 against
 its own base period, so a one-day live index is a flat line *by construction* —
 the dashboard says so in the amber banner. That is the honest behaviour; do not

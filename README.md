@@ -62,6 +62,7 @@ point the same pipeline at instead.
 | Quality engine (VALID / SUSPICIOUS / DUPLICATE / INVALID / SOLD_OUT / STALE) | ✅ auditable |
 | Deterministic demo dataset (24 routes · 6 airlines · 5 active sources · 90 days) | ✅ |
 | Background collection engine (scheduled sweeps → normalize → quality gate → SQLite) | ✅ |
+| In-request sweeps on serverless (Vercel) + ephemeral/durable store labelling | ✅ |
 | **Demo ↔ Scraper toggle** on every screen (server-side, persisted) | ✅ |
 | Raw-payload archive + "as collected" Live Feed screen | ✅ |
 | Backtests / validation metrics | ✅ |
