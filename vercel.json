@@ -5,7 +5,22 @@
   "functions": {
     "api/index.py": {
       "maxDuration": 60,
-      "includeFiles": "backend/**, frontend/dist/**, data/**"
+      "includeFiles": [
+        "backend/**",
+        "frontend/dist/**",
+        "data/**"
+      ]
     }
-  }
+  },
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-store, max-age=0, must-revalidate"
+        }
+      ]
+    }
+  ]
 }

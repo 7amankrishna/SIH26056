@@ -33,6 +33,10 @@ START_TIME = time.time()
 # Repo root = backend/app/main.py -> parents[2]
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _FRONTEND_DIST = _REPO_ROOT / "frontend" / "dist"
+# A stale index.html can reference chunk names from a previous Vite deployment,
+# yielding a blank page for a regular browser while an incognito window works.
+# Hashed assets are safe to cache, but the SPA document must always revalidate.
+_SPA_DOCUMENT_HEADERS = {"Cache-Control": "no-store, max-age=0, must-revalidate"}
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -145,7 +149,7 @@ if _FRONTEND_DIST.is_dir():
 
     @app.get("/", include_in_schema=False)
     def index() -> FileResponse:
-        return FileResponse(str(_FRONTEND_DIST / "index.html"))
+        return FileResponse(str(_FRONTEND_DIST / "index.html"), headers=_SPA_DOCUMENT_HEADERS)
 
     @app.get("/{full_path:path}", include_in_schema=False)
     def spa(full_path: str) -> FileResponse:
@@ -165,4 +169,4 @@ if _FRONTEND_DIST.is_dir():
             raise HTTPException(status_code=404, detail="Not found.")
         if candidate.is_file():
             return FileResponse(str(candidate))
-        return FileResponse(str(_FRONTEND_DIST / "index.html"))
+        return FileResponse(str(_FRONTEND_DIST / "index.html"), headers=_SPA_DOCUMENT_HEADERS)

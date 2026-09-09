@@ -65,7 +65,7 @@ point the same pipeline at instead.
 | Background collection engine (scheduled sweeps → normalize → quality gate → SQLite) | ✅ |
 | In-request sweeps on serverless (Vercel) + ephemeral/durable store labelling | ✅ |
 | **Demo ↔ Scraper toggle** on every screen (server-side, persisted) | ✅ |
-| Raw-payload archive + "as collected" Live Feed screen | ✅ |
+| Raw-payload archive + collection audit endpoints | ✅ |
 | Backtests / validation metrics | ✅ |
 | Docker Compose | ✅ |
 
@@ -77,7 +77,7 @@ names you like (`Cheapest Fare (INR)`, `Date of Journey`, `From`/`To`, … are a
 recognised). Nothing else changes: no code, no restart, and **adding another file
 merges its rows in**, so growing the dataset is a file drop.
 
-**From the dashboard:** Operations → **Import Data** → drop the file on the box.
+**From the dashboard:** **Import Data** → drop the file on the box.
 It uploads, parses and reports back (rows, column mapping, rejected rows), and
 you can delete files from the same screen.
 
@@ -89,9 +89,9 @@ cd backend && python -m app.custom_data            # per-file report: rows, mapp
 cd backend && python -m app.custom_data --import ~/Downloads/export.xlsx
 ```
 
-The dashboard switches its badge from `DEMO DATA` to `YOUR DATA`, every screen
-(overview, index, routes, airlines, lead time, quality, collection monitor) reads
-the imported observations, and `GET /api/data/files` reports exactly which files
+The dashboard switches its badge from `DEMO DATA` to `YOUR DATA`; the Overview,
+Index, Routes, Airlines and Lead Time views read the imported observations, and
+`GET /api/data/files` reports exactly which files
 fed each number, how columns were mapped and which rows were rejected and why.
 Missing fields (route, lead time, fare components, quality flags) are derived;
 unusable rows are counted, never invented. Full contract:
@@ -228,17 +228,12 @@ always tell which of the three they are looking at.
    statistically controlled.
 5. **Lead Time** — the advance-booking elasticity curve (T+1 → T+45) with an
    automatic insight ("Average observed fare is X% higher at T+1 than T+45").
-6. **Data Quality** — overall quality score, breakdown (completeness,
-   consistency, uniqueness, freshness, source coverage, outlier rate) and a
-   drill-down into rejected / suspicious observations.
-7. **Collection Monitor** — per-source health, success rate, latency, failures,
-   circuit-breaker state and compliance. Disabled sources are never shown live.
-8. **Methodology** — the 8-step framework, the actual formula, definitions and
-   the *prototype* disclaimer.
-9. **API / Data Access** — the documented, typed REST contract.
-10. **Live Feed (Scraper)** — the collection engine's own screen: source health and
-    circuit-breaker state, the run log including blocked runs, collected fares,
-    raw payloads verbatim, and the enforced header/blocklist policy.
+6. **Import Data** — upload and validate CSV/Excel/JSON exports, inspect
+   storage diagnostics, and upsert data into the configured database.
+7. **Methodology** — the standalone statistical framework with rendered LaTex
+   estimators, inclusion rules, base-period definition and prototype disclaimer.
+8. **API / Data Access** — the documented, typed REST contract, including
+   quality, provenance and collection audit endpoints for technical reviewers.
 
 ## Documentation
 

@@ -131,7 +131,7 @@ class CollectionService:
             if adapter is None:
                 continue
             # Key on adapter.id, not the config alias: the run log, the stored
-            # observations and the Collection Monitor all reference sources by
+            # observations and collection-status/audit responses all reference sources by
             # their canonical id, so they must agree on one string.
             self.adapters[adapter.id] = adapter
             self.breakers.setdefault(adapter.id, Breaker())
@@ -629,7 +629,7 @@ class CollectionService:
         }
 
     def collection_runs_view(self) -> dict[str, Any]:
-        """Live replacement for the Collection Monitor payload in live mode.
+        """Live collection-status payload in live mode.
 
         Shows the *real* run log, including blocked/failed rows — a source that
         stopped collecting is shown stopped, never as live.

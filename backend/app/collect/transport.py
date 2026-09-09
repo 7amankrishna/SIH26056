@@ -29,7 +29,7 @@ from ..config import settings
 class CollectionError(Exception):
     """A collection attempt failed in a way the pipeline must report honestly.
 
-    ``kind`` drives the Collection Monitor state:
+    ``kind`` drives collection-status state:
 
     ``blocked``      source refused automated access (401/403/407/451 or a bot
                      wall). -> STOP_AND_BACKOFF; never recorded as a healthy run.

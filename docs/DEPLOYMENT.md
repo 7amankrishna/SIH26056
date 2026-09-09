@@ -112,14 +112,15 @@ consequences are worth knowing before a demo:
 
 - **Serverless filesystems are read-only except `/tmp`, and `/tmp` is
   per-instance.** The store detects a hosted runtime (`VERCEL`, `VERCEL_ENV`,
-  `AWS_LAMBDA_FUNCTION_NAME`, …) and uses SQLite under `/tmp/apix-data`, labelled
-  *ephemeral* in every API response and in the dashboard's Live Feed: collected
-  data survives as long as that instance does, and a cold start or redeploy
-  resets it. **Vercel ignores `DATABASE_URL` by default**, so an inherited or
-  broken value cannot disable collection. For durable history set
-  `APIX_IGNORE_DATABASE_URL=0` and `DATABASE_URL` to a managed PostgreSQL
-  (Neon/Supabase) — the same three tables (`collection_runs`, `raw_payloads`,
-  `observations`) are created there, and the store reports `durable: true`.
+  `AWS_LAMBDA_FUNCTION_NAME`, …) and uses SQLite under `/tmp/apix-data` when no
+  database is configured; it is labelled *ephemeral* in every API response.
+  The bundled `/var/task/data` directory remains readable for sample files, but
+  browser uploads are staged in `/tmp/apix-data/imports` so they never fail with
+  `Errno 30`. A configured `DATABASE_URL` is honoured on Vercel and selects the
+  durable PostgreSQL store (Neon/Supabase). The same three tables
+  (`collection_runs`, `raw_payloads`, `observations`) are created there, and the
+  store reports `durable: true`. Set `APIX_IGNORE_DATABASE_URL=1` only to force
+  the temporary SQLite demo despite a configured URL.
 - **Storage problems degrade the scraper, never the dashboard.** If no database
   can be used at all (an invalid `DATABASE_URL` when explicitly enabled, or an
   unwritable SQLite path), the store
@@ -133,11 +134,12 @@ consequences are worth knowing before a demo:
   matters, pin it with `APIX_DATA_MODE=demo`; otherwise a live mode left on by an
   earlier run will serve a thin, correctly-labelled-but-different index.
 
-Ignoring `DATABASE_URL` happens **before** validation or connection, not after a
-failed connection attempt. No Vercel environment-variable edits are required for
-the temporary-store demo. The API reports `store.ignores_database_url: true` and
-a safe explanatory note (never the connection string). Existing PostgreSQL data
-is left untouched; switching backends does not migrate collection history.
+When `APIX_IGNORE_DATABASE_URL=1`, the URL is ignored **before** validation or
+connection, which is useful for an intentionally offline temporary-store demo.
+Otherwise a configured URL is validated and used on every platform. The API
+reports `store.ignores_database_url` and a safe explanatory note (never the
+connection string). Existing PostgreSQL data is left untouched; switching
+backends does not migrate collection history.
 
 ### Sweeps on a request-scoped runtime
 
@@ -176,22 +178,26 @@ Backend (prefix `APIX_`):
 - `APIX_DEMO_DAYS` — default `90`. Number of days the deterministic dataset spans.
 - `APIX_DATA_DIR` — where the SQLite store lives. Defaults to `backend/data/`
   locally and `/tmp/apix-data` on a serverless runtime.
-- `APIX_CUSTOM_DATA_DIR` — directory scanned for **your own** fare files
+- `APIX_CUSTOM_DATA_DIR` — operator-managed directory scanned for fare files
   (CSV/JSON/JSONL). Defaults to `<repo>/data`. Any usable file there replaces the
-  synthetic demo dataset; see `docs/CUSTOM_DATA.md`. Note that a serverless
-  filesystem is read-only outside `/tmp`, so on Vercel ship the files with the
-  build (they are read, never written) or set this to a bundled path.
+  synthetic demo dataset; see `docs/CUSTOM_DATA.md`. On Vercel it may remain a
+  bundled, read-only path; browser uploads are automatically staged separately.
+- `APIX_UPLOAD_DATA_DIR` — writable landing directory for browser uploads. When
+  omitted, local writable custom-data directories are reused; Vercel defaults to
+  `/tmp/apix-data/imports`. Point this to a mounted shared volume on a VM/container
+  if uploaded files themselves must survive restarts.
 - `APIX_CUSTOM_DATA` — default `1`. `0` disables custom-data loading.
 - Uploaded/imported rows are upserted into the same `observations` table the
   collector uses, matched on `observation_id` (see `docs/CUSTOM_DATA.md`). Set
-  `DATABASE_URL` — and `APIX_IGNORE_DATABASE_URL=0` on Vercel — for that to be
-  Supabase; without it the import still works but is only stored on disk.
+  `DATABASE_URL` for that to be Supabase; it is honoured on Vercel unless
+  `APIX_IGNORE_DATABASE_URL=1`. The Import screen also exposes **Push demo data**
+  (`POST /api/data/persist-demo`) for an idempotent database seed.
 - `APIX_DATA_MODE` — `demo` pins the dashboard to the synthetic dataset (custom
   files are ignored), `live` pins it to scraped data.
-- `APIX_IGNORE_DATABASE_URL` — defaults to `1` on Vercel (`VERCEL` or
-  `VERCEL_ENV` set), `0` elsewhere. `1` / `true` / `yes` / `on` select SQLite
-  without reading or connecting to `DATABASE_URL`; `0` / `false` / `no` / `off`
-  enable the PostgreSQL setting. Unset/blank uses the platform default.
+- `APIX_IGNORE_DATABASE_URL` — default `0` on every platform. `1` / `true` /
+  `yes` / `on` intentionally select SQLite without reading or connecting to
+  `DATABASE_URL`; `0` / `false` / `no` / `off` (or unset) honour the PostgreSQL
+  setting when a URL is provided.
 - `DATABASE_URL` — PostgreSQL URL or keyword DSN (on Supabase use the
   **Transaction pooler** URI, port 6543, with `?sslmode=require`). Used only when
   `APIX_IGNORE_DATABASE_URL` is off. In that mode an invalid value is refused
@@ -213,8 +219,9 @@ Frontend:
 
 ## Moving to PostgreSQL
 
-The store already speaks PostgreSQL: set `APIX_IGNORE_DATABASE_URL=0` and
-`DATABASE_URL` (managed Neon or Supabase works well with Vercel), then redeploy.
+The store already speaks PostgreSQL: set `DATABASE_URL` (managed Neon or
+Supabase works well with Vercel), ensure `APIX_IGNORE_DATABASE_URL` is unset or
+`0`, then redeploy.
 The same three tables are created there, with the
 SQLite date/idiom differences translated in one place (`Store._connect`).
 `GET /api/collect/status` then reports `store.durable: true` and the ephemeral

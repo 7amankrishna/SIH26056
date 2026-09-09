@@ -29,7 +29,7 @@ Because the imported rows are turned into the same `Observation` objects and
 aggregated by the same function that backs the demo and live paths, **every
 screen works unchanged**: overview KPIs, index trend, route table, heatmap,
 airline comparison, lead-time curve, fare distribution, quality breakdown,
-rejected-rows audit, provenance drill-down and the collection monitor.
+rejected-rows audit, provenance drill-down and collection-status APIs.
 
 ### Persisting to your database (Supabase)
 
@@ -61,7 +61,7 @@ the connection state and the insert/update/replace counts per upload; if no
 database is configured it says so and keeps serving the files from disk.
 
 Credentials are read from the environment (``DATABASE_URL``, plus
-``APIX_IGNORE_DATABASE_URL=0`` on Vercel) — never from a request, never logged,
+``APIX_IGNORE_DATABASE_URL`` unset or ``0`` on Vercel) — never from a request, never logged,
 never echoed in an API response. See `docs/DEPLOYMENT.md`.
 
 ### Precedence
@@ -148,9 +148,9 @@ Imported routes are registered into the same catalogue the engine reads.
      honestly as `weight_version = provisional-observation-share-v1`.
 * Lead times present in the data widen the lead-time ladder, so the T+ curve
   shows the buckets you actually have.
-* Sources found in the data are registered so the Collection Monitor shows real
-  per-source counts instead of the synthetic ones — and only those, so the
-  import is never padded with built-in sources that emitted nothing.
+* Sources found in the data are registered for the API collection/audit views,
+  with real per-source counts only — imports are never padded with built-in
+  sources that emitted nothing.
 * Everything registered is **rolled back before the next build**, so deleting a
   file removes its routes instead of leaving them in the basket.
 

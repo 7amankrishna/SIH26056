@@ -1,6 +1,8 @@
 # Vercel Python runtime dependencies (also used if a root level install is run).
-# Keep in sync with backend/requirements.txt.
+# Keep in sync with backend/requirements.txt for the runtime features used by api/index.py.
 fastapi==0.115.6
 pydantic==2.10.4
 uvicorn[standard]==0.32.1
 python-multipart==0.0.20
+psycopg2-binary==2.9.10
+openpyxl==3.1.5

@@ -254,11 +254,25 @@ class DataFileReport(ApxModel):
     modified_at: Optional[str] = None
 
 
+class UploadStorageDiagnostics(ApxModel):
+    """Safe upload-storage capability report (never includes credentials)."""
+
+    read_dirs: list[str] = Field(default_factory=list)
+    upload_dir: str
+    writable: bool
+    serverless: bool = False
+    ephemeral: bool = False
+    reason: Optional[str] = None
+    note: Optional[str] = None
+
+
 class CustomDataReport(ApxModel):
     """Provenance for the user's own data: which files, how they were read."""
 
     enabled: bool = True
     data_dir: str
+    data_dirs: list[str] = Field(default_factory=list)
+    upload: Optional[UploadStorageDiagnostics] = None
     active: bool = False
     origin: str = "demo"
     files: list[DataFileReport] = Field(default_factory=list)
@@ -324,6 +338,7 @@ class UploadResponse(ApxModel):
     refused: list[dict[str, str]] = Field(default_factory=list)
     persistence: Optional[PersistenceReport] = None
     report: Optional[CustomDataReport] = None
+    diagnostics: Optional[UploadStorageDiagnostics] = None
 
 
 class DataSourceState(ApxModel):

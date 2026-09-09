@@ -7,6 +7,7 @@ lead-time, distribution, quality, collection, methodology and provenance.
 
 from __future__ import annotations
 
+import logging
 from typing import Optional
 
 from fastapi import APIRouter, File, HTTPException, Query, UploadFile
@@ -31,6 +32,7 @@ from ..engine import (
 from .. import schemas
 
 router = APIRouter(tags=["APIx"])
+logger = logging.getLogger(__name__)
 
 
 @router.get("/overview", response_model=schemas.Overview)
@@ -211,7 +213,35 @@ def persist_data_files(file: Optional[str] = Query(
             raise HTTPException(status_code=404, detail=f"No rows came from '{file}'.")
         observations = selected
     basket = set(ds.route_meta) or None
-    return persist_observations(observations, label=file or "all", basket=basket)
+    report = persist_observations(observations, label=file or "all", basket=basket)
+    if not report.get("persisted"):
+        logger.warning("Imported-data persistence failed: backend=%s error=%s", report.get("backend"), report.get("error"))
+    return report
+
+
+@router.post("/data/persist-demo", response_model=schemas.PersistenceReport)
+def persist_demo_data() -> dict:
+    """Seed the configured store with the deterministic APIx demo dataset.
+
+    This intentionally bypasses the browser-upload filesystem. It makes the
+    ``Push demo data`` action work even when a serverless deployment keeps its
+    bundled ``/var/task/data`` directory read-only, and it is idempotent because
+    deterministic demo observations retain stable ``observation_id`` values.
+    """
+    from ..dataset import build_dataset
+    from ..persist import persist_observations
+
+    demo = build_dataset()
+    report = persist_observations(
+        demo.observations,
+        label="apix-built-in-demo-v1",
+        basket=set(demo.route_meta) or None,
+    )
+    if not report.get("persisted"):
+        logger.warning("Demo-data persistence failed: backend=%s error=%s", report.get("backend"), report.get("error"))
+    else:
+        logger.info("Demo data persisted: total=%s backend=%s", report.get("total"), report.get("backend"))
+    return report
 
 
 @router.post("/data/upload", response_model=schemas.UploadResponse)
@@ -225,8 +255,9 @@ async def upload_data_files(files: list[UploadFile] = File(...)) -> dict:
     rather than aborting the whole upload.
     """
     from ..config import settings
-    from ..custom_data import import_bytes, import_report, invalidate_cache
+    from ..custom_data import import_bytes, import_report, invalidate_cache, upload_diagnostics
 
+    diagnostics = upload_diagnostics()
     imported: list[dict] = []
     refused: list[dict[str, str]] = []
 
@@ -257,7 +288,22 @@ async def upload_data_files(files: list[UploadFile] = File(...)) -> dict:
             refused.append({"name": name, "error": str(exc)})
             continue
         except OSError as exc:
-            refused.append({"name": name, "error": f"could not write file: {exc}"})
+            # Keep a support-quality diagnostic in the server log without
+            # exposing environment variables or connection strings to clients.
+            logger.warning(
+                "Upload write failed: name=%s upload_dir=%s error=%s",
+                name,
+                diagnostics.get("upload_dir"),
+                f"{type(exc).__name__}: {exc}",
+            )
+            hint = diagnostics.get("reason") or (
+                "The deployment filesystem is read-only. Configure APIX_UPLOAD_DATA_DIR "
+                "to a writable volume, or use the serverless /tmp target."
+            )
+            refused.append({
+                "name": name,
+                "error": f"could not write temporary upload: {exc}. Diagnostic: {hint}",
+            })
             continue
         imported.append({
             "name": target.name,
@@ -315,7 +361,13 @@ async def upload_data_files(files: list[UploadFile] = File(...)) -> dict:
                     ))
             persistence = _merge_persistence(reports)
 
-    return {"imported": enriched, "refused": refused, "persistence": persistence, "report": report}
+    return {
+        "imported": enriched,
+        "refused": refused,
+        "persistence": persistence,
+        "report": report,
+        "diagnostics": upload_diagnostics(),
+    }
 
 
 @router.delete("/data/files/{name}", response_model=schemas.CustomDataReport)

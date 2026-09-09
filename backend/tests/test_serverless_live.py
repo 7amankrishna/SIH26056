@@ -134,22 +134,13 @@ def test_serverless_defaults_point_the_store_at_tmp_and_drop_the_loop():
     assert out["data_dir"] == "/tmp/apix-data"
 
 
-@pytest.mark.parametrize(
-    "database_url",
-    [
-        None,
-        "https://github.com/7amankrishna/SIH26056",
-        "postgresql://user:secret@[broken/app",
-        "postgresql://user:secret@127.0.0.1:1/none",
-    ],
-)
-def test_live_scraper_works_end_to_end_on_a_serverless_runtime(tmp_path, database_url):
+def test_live_scraper_works_end_to_end_on_a_serverless_runtime(tmp_path):
     out = _run(
         SCRAPER_FLOW,
         {
             **SERVERLESS_ENV,
             "APIX_DATA_DIR": str(tmp_path / "store"),
-            "DATABASE_URL": database_url,
+            "DATABASE_URL": None,
         },
     )
 
@@ -165,14 +156,8 @@ def test_live_scraper_works_end_to_end_on_a_serverless_runtime(tmp_path, databas
     assert status["request_scoped_sweeps"] is True
     assert status["store"]["ephemeral"] is True  # labelled, never silent
     assert status["store"]["durable"] is False
-    assert status["store"]["ignores_database_url"] is True
-    assert "DATABASE_URL is ignored" in health["store_note"]
-    assert "APIX_IGNORE_DATABASE_URL=0" in status["store"]["note"]
-    if database_url:
-        # The public repo URL also appears legitimately in the scraper's user
-        # agent, so check storage metadata for the URL and all responses for secrets.
-        assert database_url not in json.dumps([health, status["store"]])
-        assert "secret" not in json.dumps(out)
+    assert status["store"]["ignores_database_url"] is False
+    assert "DATABASE_URL" in (health["store_note"] or "")
 
     # Switching to scraped data collects *inside* the request that asked for it.
     assert out["switch"]["code"] == 200, out["switch"]
@@ -301,8 +286,12 @@ def test_explicit_database_opt_in_still_fails_closed_without_500s(tmp_path, data
         assert out["switch"]["code"] == 503, out["switch"]
         assert "collection store is unavailable" in out["switch"]["body"]["detail"].lower()
     else:
-        # A configured database that cannot be reached is a 503 with a reason on
-        # the scraper's own endpoints — never an opaque Internal Server Error.
-        assert out["status"]["code"] == 503, out["status"]
-        assert "could not be reached" in out["status"]["body"]["detail"]
+        # A configured database that cannot be reached is exposed as an
+        # unavailable capability in status, while the action that needs it is a
+        # clear 503 — never an opaque Internal Server Error.
+        assert out["status"]["code"] == 200, out["status"]
+        store = out["status"]["body"]["store"]
+        assert store["available"] is False
+        assert store["backend"] == "postgresql"
+        assert "could not be reached" in (store["unavailable_reason"] or "")
         assert out["switch"]["code"] == 503, out["switch"]

@@ -46,7 +46,7 @@ def test_full_pipeline_via_api(client):
     rejected = client.get("/api/quality/rejected").json()
     assert "rows" in rejected
 
-    # 8. Collection monitor
+    # 8. Collection-status audit API
     runs = client.get("/api/collection-runs").json()
     assert runs["summary"]["active_sources"] >= 1
 

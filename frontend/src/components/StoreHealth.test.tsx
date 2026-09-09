@@ -21,9 +21,9 @@ const ephemeralStore: StoreCounts = {
 describe("StoreHealthBanner", () => {
   it("shows the ignored DATABASE_URL and temporary-storage caveat from the API", () => {
     const note =
-      "DATABASE_URL is ignored (APIX_IGNORE_DATABASE_URL=1; default on Vercel). " +
+      "DATABASE_URL is ignored because APIX_IGNORE_DATABASE_URL=1. " +
       "Data is lost on a cold start or redeploy. " +
-      "For durable history, set APIX_IGNORE_DATABASE_URL=0 and DATABASE_URL to PostgreSQL.";
+      "For durable history, set DATABASE_URL to PostgreSQL and leave APIX_IGNORE_DATABASE_URL unset or 0.";
     render(<StoreHealthBanner store={{ ...ephemeralStore, note }} />);
 
     expect(screen.getByText("Ephemeral collection store (serverless /tmp)")).toBeInTheDocument();

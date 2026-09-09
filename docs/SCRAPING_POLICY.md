@@ -21,7 +21,7 @@ What it does not do is evade a site's access controls.
    access, manually supplied datasets, or deterministic mock/synthetic data.
 4. **Rate limit & throttle.** Respect per-source rate limits and backoff
    schedules.
-5. **Never claim disabled/live incorrectly.** The Collection Monitor explicitly
+5. **Never claim disabled/live incorrectly.** The collection-status API explicitly
    disambiguates `healthy`, `degraded`, `blocked`, `disabled` and `ready`. A
    source that is stopped is never shown as live.
 
@@ -29,12 +29,12 @@ What it does not do is evade a site's access controls.
 
 | Rule | Enforcement point |
 | --- | --- |
-| No evasion | [`headers.NOT_IMPLEMENTED`](../backend/app/collect/headers.py) — a written blocklist of techniques, surfaced in the API (`GET /api/collect/policy`) and on the Live Feed screen |
+| No evasion | [`headers.NOT_IMPLEMENTED`](../backend/app/collect/headers.py) — a written blocklist of techniques, surfaced through `GET /api/collect/policy` |
 | robots.txt first | [`robots.RobotsGate`](../backend/app/collect/robots.py) — every generic adapter must pass it; **fails closed** if robots.txt cannot be read (`APIX_ROBOTS_FAIL_CLOSED=1`) |
 | Host containment | `AllowListTransport` — a generic adapter can only contact hosts on its own configured allow-list |
 | Throttling | `Politeness` in [`transport.py`](../backend/app/collect/transport.py) — per-host minimum gap, `Crawl-delay` adoption, `Retry-After` honouring, exponential backoff, and a hard per-sweep request ceiling |
 | Stop and back off | `CollectionService._sweep_source` — a `blocked`/`robots_denied` error breaks the sweep immediately; the circuit breaker then opens and **no requests are issued at all** until the cooldown expires |
-| Honest failure | `store.collection_runs` — blocked/failed/partial runs are rows in the run log, rendered on the Collection Monitor and Live Feed screens |
+| Honest failure | `store.collection_runs` — blocked/failed/partial runs are rows in the run log, returned by the collection audit endpoints |
 | Bot-wall handling | `SourceAdapter._guard_against_denial` — a 200 response that is actually an interstitial is classified `blocked` and stopped, never solved |
 | No silent data loss | `normalize` + `store` — every response body is archived verbatim before parsing, so a rejected observation is still auditable |
 | Decide before you fetch | [`preflight.py`](../backend/app/collect/preflight.py) — `python -m app.collect.preflight <url>` / `GET /api/collect/preflight?url=` reports the verdict, the crawl-delay and the request volume a sweep would generate, plus the ToS/redistribution checklist a machine cannot settle |

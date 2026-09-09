@@ -54,7 +54,7 @@ Where:
 - **Sold-out is explicit.** Sold-out fares are represented with a distinct
   `SOLD_OUT` status and an `exclusion_reason`, never folded into the index.
 - **Outliers are flagged.** `SUSPICIOUS` observations remain available for audit
-  (see the Data Quality / audit drill-down) instead of being deleted.
+  (see the quality/audit endpoints) instead of being deleted.
 - **Every index result carries** its `methodology_version`, `weight_version`,
   sample sizes, excluded counts and a quality score, so the calculation can be
   reproduced.

@@ -99,7 +99,7 @@ ROUTE_AIRLINES: dict[str, list[str]] = {
     "BOM-JAI": ["6E", "AI", "QP"],
 }
 
-# Sources feeding the pipeline. ``status`` mirrors the collection monitor:
+# Sources feeding the pipeline. ``status`` is surfaced by collection-status/audit APIs:
 #   healthy  -> actively collecting (mock, deterministic payloads)
 #   degraded -> collecting but with intermittent failures
 #   disabled -> stopped (compliance / policy / paused) — NEVER presented as live

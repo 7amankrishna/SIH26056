@@ -30,6 +30,7 @@ import {
   useDatabaseStatus,
   useDeleteDataFile,
   usePersistDataFiles,
+  usePersistDemoData,
   useReloadDataFiles,
   useUploadDataFiles,
 } from "../hooks/useApi";
@@ -81,6 +82,7 @@ export default function ImportData() {
   const reload = useReloadDataFiles();
   const database = useDatabaseStatus();
   const persist = usePersistDataFiles();
+  const persistDemo = usePersistDemoData();
 
   const [dragging, setDragging] = useState(false);
   const [result, setResult] = useState<UploadResponse | null>(null);
@@ -114,6 +116,7 @@ export default function ImportData() {
   const files = data?.files ?? [];
   const totals = data?.totals ?? {};
   const notes = data?.notes ?? [];
+  const persistenceError = persist.error ?? persistDemo.error;
 
   return (
     <div className="space-y-5">
@@ -152,8 +155,43 @@ export default function ImportData() {
             {persist.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CloudUpload className="h-3.5 w-3.5" />}
             Push to database
           </button>
+          <button
+            onClick={() => persistDemo.mutate()}
+            disabled={persistDemo.isPending}
+            className="btn btn-sm btn-secondary"
+            title="Seed the deterministic built-in APIx demo observations directly into the configured store"
+          >
+            {persistDemo.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Database className="h-3.5 w-3.5" />}
+            Push demo data
+          </button>
         </div>
       </div>
+
+      {(data?.upload || result?.diagnostics) && (() => {
+        const storage = result?.diagnostics ?? data?.upload;
+        if (!storage) return null;
+        const warning = !storage.writable;
+        const temporary = storage.serverless || storage.ephemeral;
+        return (
+          <div className={`flex items-start gap-2 rounded-xl border px-4 py-3 text-xs ${
+            warning ? "border-red-200 bg-red-50 text-red-800" : temporary ? "border-amber-200 bg-amber-50 text-amber-800" : "border-sky-100 bg-sky-50 text-sky-800"
+          }`}>
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+            <div>
+              <p className="font-semibold">Upload storage diagnostic</p>
+              <p className="mt-0.5">
+                New files are staged in <code className="rounded bg-white/50 px-1 font-mono">{storage.upload_dir}</code>.
+                {warning
+                  ? ` It is not writable${storage.reason ? `: ${storage.reason}` : "."}`
+                  : temporary
+                    ? " This serverless directory is temporary, so use Push to database for durable storage."
+                    : " The directory is writable."}
+              </p>
+              {storage.note && <p className="mt-1">{storage.note}</p>}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Upload ------------------------------------------------------------ */}
       <div
@@ -340,7 +378,7 @@ export default function ImportData() {
             </p>
             <p className="text-xs text-ink-500">
               Set <span className="font-mono">DATABASE_URL</span> to your Supabase connection string
-              (and <span className="font-mono">APIX_IGNORE_DATABASE_URL=0</span> on Vercel), then press{" "}
+              and ensure <span className="font-mono">APIX_IGNORE_DATABASE_URL</span> is not <span className="font-mono">1</span>, then press{" "}
               <span className="font-medium">Push to database</span>. See{" "}
               <span className="font-mono">docs/DEPLOYMENT.md</span>.
             </p>
@@ -350,6 +388,17 @@ export default function ImportData() {
           <div className="mt-3 border-t pt-3" style={{ borderColor: "rgb(var(--ink-900) / 0.07)" }}>
             <PersistenceLine report={persist.data} />
           </div>
+        )}
+        {persistDemo.data && (
+          <div className="mt-3 border-t pt-3" style={{ borderColor: "rgb(var(--ink-900) / 0.07)" }}>
+            <p className="text-xs font-semibold text-ink-700">Built-in demo seed</p>
+            <PersistenceLine report={persistDemo.data} />
+          </div>
+        )}
+        {persistenceError && (
+          <p className="mt-3 text-xs text-red-700">
+            {persistenceError instanceof Error ? persistenceError.message : String(persistenceError)}
+          </p>
         )}
       </ChartCard>
 

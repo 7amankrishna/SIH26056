@@ -48,6 +48,10 @@ export function useQuality() {
   return useQuery({ queryKey: ["quality"], queryFn: api.quality });
 }
 
+export function useMethodology() {
+  return useQuery({ queryKey: ["methodology"], queryFn: api.methodology, staleTime: 5 * 60_000 });
+}
+
 export function useCollectionRuns() {
   return useQuery({ queryKey: ["collection-runs"], queryFn: api.collectionRuns, refetchInterval: 60_000 });
 }
@@ -96,6 +100,17 @@ export function usePersistDataFiles() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (file?: string) => api.persistDataFiles(file),
+    onSuccess: () => {
+      DATA_KEYS.forEach((k) => qc.invalidateQueries({ queryKey: [k] }));
+      qc.invalidateQueries({ queryKey: ["data-database"] });
+    },
+  });
+}
+
+export function usePersistDemoData() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: api.persistDemoData,
     onSuccess: () => {
       DATA_KEYS.forEach((k) => qc.invalidateQueries({ queryKey: [k] }));
       qc.invalidateQueries({ queryKey: ["data-database"] });

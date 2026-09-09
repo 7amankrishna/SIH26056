@@ -1,8 +1,9 @@
 """SQLite and Postgres persistence for collected data.
 
-Stdlib ``sqlite3`` for local and the Vercel demo: no service to provision, works
-offline. Vercel ignores ``DATABASE_URL`` by default; set
-``APIX_IGNORE_DATABASE_URL=0`` to opt in to Postgres via psycopg2. Three tables:
+Stdlib ``sqlite3`` for local and the Vercel fallback demo: no service to
+provision, works offline. A configured ``DATABASE_URL`` is honoured on every
+platform (including Vercel) and selects Postgres via psycopg2; set
+``APIX_IGNORE_DATABASE_URL=1`` only to force the offline SQLite fallback. Three tables:
 
     collection_runs   one row per sweep per source, incl. blocked/failed runs
     raw_payloads      the payload *exactly as received* (never rewritten)
@@ -63,20 +64,20 @@ def _production_environment() -> bool:
 
 
 def _ignore_database_url() -> bool:
-    """Keep the Vercel demo independent of stale/injected database credentials.
+    """Whether to explicitly opt out of a configured PostgreSQL database.
 
-    No Vercel settings change is needed to recover the demo. Operators who want
-    PostgreSQL explicitly set APIX_IGNORE_DATABASE_URL=0; other deployments keep
-    honouring DATABASE_URL by default. An empty flag uses the platform default.
+    A configured ``DATABASE_URL`` must mean "use the database" on every host,
+    including Vercel. The old Vercel-specific default silently ignored a valid
+    Supabase URL and made successful imports land only in ephemeral SQLite.
+    Set ``APIX_IGNORE_DATABASE_URL=1`` only for an intentionally offline demo.
     """
-    default = "1" if _vercel_environment() else "0"
-    value = os.getenv("APIX_IGNORE_DATABASE_URL", "").strip() or default
+    value = os.getenv("APIX_IGNORE_DATABASE_URL", "").strip() or "0"
     return value.lower() in {"1", "true", "yes", "on"}
 
 
 POSTGRES_STORE_HINT = (
-    "For durable collection history, set APIX_IGNORE_DATABASE_URL=0 and DATABASE_URL "
-    "to a PostgreSQL database."
+    "For durable collection history, set DATABASE_URL to a PostgreSQL database "
+    "(and ensure APIX_IGNORE_DATABASE_URL is not set to 1)."
 )
 EPHEMERAL_STORE_NOTE = (
     "Ephemeral serverless store: SQLite under the only writable path (/tmp), so collected "
@@ -313,13 +314,14 @@ class Store:
         self.backend = "sqlite"
         try:
             self._configure(path)
-        except StoreConfigurationError as exc:
-            # Fail closed (nothing is written anywhere) but stay up: the reason is
-            # surfaced through the API instead of as an unhandled exception.
+            self._init()
+        except StoreError as exc:
+            # Fail closed (nothing is written anywhere) but stay up: invalid or
+            # unreachable PostgreSQL must become a visible capability failure,
+            # never a process-wide 500 that makes the dashboard look blank.
             self._unavailable_reason = str(exc)
-            self.backend = "unavailable"
-            return
-        self._init()
+            if self.backend != "postgresql":
+                self.backend = "unavailable"
 
     def _configure(self, path: Optional[Path]) -> None:
         # Decide before reading, validating or connecting: even a valid-looking
@@ -351,7 +353,7 @@ class Store:
             raise StoreConfigurationError(
                 f"SQLite collection store is not writable at {candidate} ({type(exc).__name__}: {exc}). "
                 "Set APIX_DATA_DIR to a writable path (on Vercel: /tmp/apix-data), or set "
-                "APIX_IGNORE_DATABASE_URL=0 and DATABASE_URL to a PostgreSQL database."
+                "DATABASE_URL to a PostgreSQL database and ensure APIX_IGNORE_DATABASE_URL is not 1."
             ) from exc
         self.path = candidate
 
@@ -374,7 +376,7 @@ class Store:
     def note(self) -> Optional[str]:
         notes = []
         if self.ignore_database_url:
-            notes.append("DATABASE_URL is ignored (APIX_IGNORE_DATABASE_URL=1; default on Vercel).")
+            notes.append("DATABASE_URL is ignored because APIX_IGNORE_DATABASE_URL=1.")
         if not self.available:
             notes.append(f"Collection store unavailable — {self._unavailable_reason}")
         elif self.ephemeral:

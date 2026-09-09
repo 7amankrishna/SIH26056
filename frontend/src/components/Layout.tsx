@@ -15,9 +15,7 @@ import {
   Landmark,
   Menu,
   Plane,
-  Radar,
   Route,
-  ShieldCheck,
   TrendingUp,
   Upload,
   X,
@@ -36,9 +34,7 @@ const NAV_ITEMS = [
   { to: "/routes", label: "Routes", icon: Route },
   { to: "/airlines", label: "Airlines", icon: Building2 },
   { to: "/lead-time", label: "Lead Time", icon: CalendarClock },
-  { to: "/quality", label: "Data Quality", icon: ShieldCheck },
   { to: "/import", label: "Import Data", icon: Upload },
-  { to: "/collection", label: "Collection Monitor", icon: Radar },
   { to: "/methodology", label: "Methodology", icon: BookOpen },
   { to: "/api", label: "API / Data Access", icon: Activity },
 ];
@@ -273,12 +269,11 @@ export function Layout() {
             )}
             {mode === "live" && !isLive && ready && (
               <div className="mb-4 flex items-start gap-3 rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-xs text-sky-800">
-                <Radar className="mt-0.5 h-4 w-4 shrink-0" />
+                <Activity className="mt-0.5 h-4 w-4 shrink-0" />
                 <p>
                   <span className="font-semibold">Live mode requested — no observations stored yet.</span> The screens below are
-                  still on demo data so nothing looks broken. Run a sweep from the{" "}
-                  <span className="font-mono">Collection Monitor</span>, or check that an adapter is enabled via{" "}
-                  <span className="font-mono">APIX_COLLECTOR_SOURCES</span>.
+                  still on demo data so nothing looks broken. Use the scraper control in the header, or check that an adapter is
+                  enabled via <span className="font-mono">APIX_COLLECTOR_SOURCES</span>.
                 </p>
               </div>
             )}

@@ -11,10 +11,14 @@ services:
       - APIX_DEMO_MODE=1
       - APIX_DEMO_DAYS=90
       # Your own fare files: drop them in ./data and the dashboard serves them
-      # instead of the synthetic dataset. Mounted read-only, no code change.
+      # instead of the synthetic dataset. Kept read-only as an operator-managed
+      # source; browser uploads and SQLite state use the named writable volume.
       - APIX_CUSTOM_DATA_DIR=/app/data
+      - APIX_DATA_DIR=/var/lib/apix
+      - APIX_UPLOAD_DATA_DIR=/var/lib/apix/imports
     volumes:
       - ./data:/app/data:ro
+      - apix_runtime:/var/lib/apix
     ports:
       - "8000:8000"
     restart: unless-stopped
@@ -27,3 +31,8 @@ services:
     ports:
       - "8080:80"
     restart: unless-stopped
+
+volumes:
+  # Keeps the local SQLite store and browser-upload landing zone writable even
+  # though ./data is intentionally mounted read-only as a sample-data source.
+  apix_runtime:

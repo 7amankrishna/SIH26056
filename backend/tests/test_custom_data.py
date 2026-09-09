@@ -365,6 +365,33 @@ def test_excel_workbook_is_read_like_a_csv(tmp_path):
     assert obs[0].total_fare == 4850.0
 
 
+def test_serverless_uploads_use_a_writable_runtime_root_and_are_scanned(tmp_path, monkeypatch):
+    """A read-only bundled data directory must not cause Vercel Errno 30."""
+    bundled = tmp_path / "bundled-data"
+    runtime = tmp_path / "runtime" / "imports"
+    # Match the production failure: an included /var/task/data/newfare1.csv is
+    # readable but cannot be overwritten by a browser upload of the same name.
+    write(bundled / "newfare1.csv", "route,date,price\nDEL-BOM,2026-09-01,4800\n")
+    monkeypatch.setattr(custom_data, "data_root", lambda: bundled)
+    monkeypatch.setattr(custom_data.settings, "request_scoped_runtime", True)
+    monkeypatch.setattr(custom_data.settings, "upload_data_dir", runtime)
+
+    target = custom_data.import_bytes(
+        "newfare1.csv", b"route,date,price\nDEL-BOM,2026-09-02,4900\n"
+    )
+
+    assert target == runtime / "newfare1_1.csv"
+    assert target.is_file()
+    assert not (bundled / "newfare1_1.csv").exists()
+    data = build_custom_dataset()
+    assert {file.path.name for file in data.files} == {"newfare1.csv", "newfare1_1.csv"}
+    assert len(data.dataset.observations) == 2
+    diagnostic = custom_data.upload_diagnostics()
+    assert diagnostic["writable"] is True
+    assert diagnostic["serverless"] is True
+    assert diagnostic["upload_dir"] == str(runtime)
+
+
 def test_import_file_lands_in_the_data_dir_without_clobbering(tmp_path):
     # The "inbox" is underscore-prefixed so the loader ignores the original.
     src = tmp_path / "_inbox" / "my_fares.csv"
@@ -437,6 +464,8 @@ def test_upload_endpoint_imports_and_reports(api_client):
     assert body["imported"][0]["mapped"]["total_fare"] == "Cheapest Fare (INR)"
     assert body["report"]["origin"] == "custom"
     assert body["report"]["totals"]["observations"] == 5
+    assert body["diagnostics"]["writable"] is True
+    assert body["diagnostics"]["upload_dir"]
 
 
 def test_upload_refuses_unsupported_types_without_aborting(api_client):
@@ -486,6 +515,25 @@ def test_delete_endpoint_removes_the_file(api_client):
     assert missing.status_code == 404
 
 
+def test_remove_prefers_runtime_upload_copy_over_same_named_bundle(tmp_path, monkeypatch):
+    """A Vercel /tmp import must stay removable even if data/ has its own copy."""
+    primary = tmp_path / "bundled-data"
+    runtime_uploads = tmp_path / "runtime-imports"
+    write(primary / "newfare1.csv", CSV)
+    write(runtime_uploads / "newfare1.csv", CSV)
+    monkeypatch.setattr(custom_data, "data_root", lambda: primary)
+    monkeypatch.setattr(custom_data, "upload_root", lambda: runtime_uploads)
+
+    deleted = custom_data.remove_file("newfare1.csv")
+
+    assert deleted == (runtime_uploads / "newfare1.csv")
+    assert not (runtime_uploads / "newfare1.csv").exists()
+    assert (primary / "newfare1.csv").exists()
+
+
 def test_delete_refuses_path_traversal(api_client):
     r = api_client.delete("/api/data/files/..%2F..%2Fetc%2Fpasswd")
-    assert r.status_code in (400, 404)
+    # Starlette may normalise the encoded traversal before routing, producing a
+    # method-not-allowed response at a different path. It must never reach the
+    # delete handler as a successful request.
+    assert r.status_code in (400, 404, 405)

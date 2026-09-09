@@ -198,6 +198,18 @@ export interface CollectionRuns {
   runs?: CollectionRun[];
 }
 
+export interface Methodology {
+  title: string;
+  version: string;
+  status: string;
+  steps: { step: number; title: string; detail: string }[];
+  formula: string;
+  definitions: Record<string, string>;
+  base_period: { start: string; end: string };
+  weight_version: string;
+  disclaimer: string;
+}
+
 export interface Provenance {
   index_date: string;
   api_value: number;
@@ -261,7 +273,7 @@ export interface StoreCounts {
   /** true only for PostgreSQL — SQLite on a serverless runtime dies with the instance. */
   durable?: boolean;
   ephemeral?: boolean;
-  /** DATABASE_URL is intentionally ignored; defaults to true for the Vercel demo. */
+  /** True only when APIX_IGNORE_DATABASE_URL explicitly forces the SQLite fallback. */
   ignores_database_url?: boolean;
   unavailable_reason?: string | null;
   /** Human-readable storage caveat, safe to show verbatim. */
@@ -395,9 +407,22 @@ export interface DataFileReport {
   modified_at: string | null;
 }
 
+export interface UploadStorageDiagnostics {
+  read_dirs: string[];
+  upload_dir: string;
+  writable: boolean;
+  serverless: boolean;
+  ephemeral: boolean;
+  reason?: string | null;
+  note?: string | null;
+}
+
 export interface CustomDataReport {
   enabled: boolean;
   data_dir: string;
+  /** All roots read by the loader; on serverless this includes bundled data and /tmp uploads. */
+  data_dirs?: string[];
+  upload?: UploadStorageDiagnostics;
   active: boolean;
   origin: DataMode;
   files: DataFileReport[];
@@ -442,6 +467,8 @@ export interface UploadResponse {
   refused: { name: string; error: string }[];
   persistence: PersistenceReport | null;
   report: CustomDataReport | null;
+  /** Safe storage facts that make a failed serverless upload actionable. */
+  diagnostics?: UploadStorageDiagnostics;
 }
 
 export interface PersistenceReport {

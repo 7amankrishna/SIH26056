@@ -1,13 +1,15 @@
 # Your data goes here
 
-**Easiest way: open the dashboard → Operations → *Import Data* → drop your file
+**Easiest way: open the dashboard → *Import Data* → drop your file
 on the box.** It uploads, parses and reports back (rows, column mapping, rejects)
 in one step, and you can delete files from the same screen.
 
 Files in this folder replace the synthetic demo dataset. Nothing else has to
 change — no code, no restart. Add another file and its rows are merged in, so
-**more data = one more file**. Uploads land here too, never overwriting an
-existing file (`fares.csv` → `fares_1.csv`).
+**more data = one more file**. On a local writable deployment browser uploads
+land here too, never overwriting an existing file (`fares.csv` → `fares_1.csv`).
+On Vercel, the bundled folder is read-only and uploads safely stage under `/tmp`;
+use **Push to database** to retain them across a cold start.
 
 ```
 data/
@@ -91,7 +93,7 @@ guessed) — see `/api/data/files` or `python -m app.custom_data` for the reason
 | --- | --- | --- |
 | `routes.csv` | `route` (or `origin`,`destination`), `weight`, `base_fare`, `distance`, `origin_city`, `destination_city` | Set the index weights (they must sum to ~1) and the city labels |
 | `airlines.csv` | `airline` (code), `name`, `alliance`, `hub` | Prettier airline names |
-| `sources.csv` | `source` (id), `name`, `type`, `status`, `compliance` | Prettier source names on the Collection Monitor |
+| `sources.csv` | `source` (id), `name`, `type`, `status`, `compliance` | Source metadata for the collection/audit API |
 
 Routes in your data that are **not** in the shipped 24-route basket are
 registered automatically. If you do not supply weights, each route is weighted by
@@ -115,7 +117,7 @@ its share of observations — the dashboard labels this
 ## 4. Uploading from the dashboard
 
 `POST /api/data/upload` (multipart, field name `files`) accepts the same formats
-and writes into this folder; `DELETE /api/data/files/{name}` removes one. The
+and writes into the configured writable upload directory; `DELETE /api/data/files/{name}` removes one. The
 **Import Data** screen is the UI over those two calls — drag & drop, per-file
 parse report, file table with delete buttons.
 
@@ -124,7 +126,7 @@ Notes:
 * unsupported types (`.exe`, …) are refused with a reason, not aborting the batch;
 * filenames are sanitised, so `../../etc/passwd` cannot escape this folder;
 * on a serverless host the platform caps request bodies (Vercel: 4.5MB) — larger
-  exports go in through this folder or the CLI.
+  exports should use a configured shared upload volume or the CLI.
 
 ## 5. Check it before you open the dashboard
 
@@ -143,10 +145,11 @@ Uploads are also written to your database (`observations` table) — Supabase in
 deployed setup — matched on `observation_id`, so uploading the same rows twice
 updates them instead of duplicating them. The **Import Data** screen shows
 whether it is connected and what each upload inserted/updated/replaced; use
-**Push to database** to (re)send everything that is loaded.
+**Push to database** to (re)send everything that is loaded, or **Push demo data**
+to seed the deterministic built-in demo rows without an uploaded file.
 
-It needs `DATABASE_URL` in the environment (`APIX_IGNORE_DATABASE_URL=0` on
-Vercel). Never send that string to anyone — put it in your `.env` or the Vercel
+It needs `DATABASE_URL` in the environment (leave `APIX_IGNORE_DATABASE_URL`
+unset or `0` on Vercel). Never send that string to anyone — put it in your `.env` or the Vercel
 project settings; the app reads it from there and never logs it.
 
 ## 7. Switching back

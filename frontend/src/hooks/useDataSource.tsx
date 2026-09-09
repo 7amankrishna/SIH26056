@@ -4,7 +4,7 @@
 // The switch is server-side state (persisted in SQLite), not just React state:
 // every screen reads the same `/api/*` endpoints, and the backend decides which
 // dataset to serve. That keeps the whole dashboard consistent — one toggle flips
-// Overview, Index, Routes, Airlines, Quality and the Collection Monitor at once,
+// Overview, Index, Routes, Airlines and Lead Time at once,
 // and the selection survives a refresh or a shared link (?source=live).
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
