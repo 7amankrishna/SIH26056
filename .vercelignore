@@ -13,3 +13,7 @@ tests/
 .env.*
 .git
 .gitignore
+
+# …but the user's own data files ARE part of the deployment: they are what the
+# dashboard serves. Re-include them after the *.csv rule above.
+!data/**

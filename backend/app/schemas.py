@@ -234,6 +234,43 @@ class Rejected(ApxModel):
 
 # --- data source / collection ------------------------------------------------ #
 
+# --- custom / imported data -------------------------------------------------- #
+
+class DataFileReport(ApxModel):
+    """One imported file and what the loader made of it."""
+
+    path: str
+    name: str
+    kind: str
+    rows: int = 0
+    observations: int = 0
+    rejected: int = 0
+    columns: list[str] = Field(default_factory=list)
+    mapped: dict[str, str] = Field(default_factory=dict)
+    unmapped: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    errors: list[str] = Field(default_factory=list)
+    size_bytes: int = 0
+    modified_at: Optional[str] = None
+
+
+class CustomDataReport(ApxModel):
+    """Provenance for the user's own data: which files, how they were read."""
+
+    enabled: bool = True
+    data_dir: str
+    active: bool = False
+    origin: str = "demo"
+    files: list[DataFileReport] = Field(default_factory=list)
+    totals: dict[str, Any] = Field(default_factory=dict)
+    date_range: dict[str, Any] = Field(default_factory=dict)
+    routes: list[dict[str, Any]] = Field(default_factory=list)
+    airlines: list[dict[str, Any]] = Field(default_factory=list)
+    sources: list[dict[str, Any]] = Field(default_factory=list)
+    weight_basis: str = "none"
+    notes: list[str] = Field(default_factory=list)
+
+
 class DataSourceState(ApxModel):
     """What the dashboard is currently serving: scraped data or demo data."""
 

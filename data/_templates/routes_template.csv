@@ -1,0 +1,3 @@
+route,weight,origin_city,destination_city,distance
+DEL-BOM,0.12,Delhi,Mumbai,1150
+BLR-DEL,0.09,Bengaluru,Delhi,1740

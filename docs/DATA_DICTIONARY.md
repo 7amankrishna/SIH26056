@@ -45,12 +45,31 @@ unavailable.
 | `STALE` | Cached / stale fare too old to be trusted. | ❌ |
 | `MISSING` | Expected field absent. | ❌ |
 
+## Data origin
+
+Every dataset carries an `origin`:
+
+| Origin | Meaning |
+| --- | --- |
+| `demo` | Deterministic synthetic dataset generated on startup (fixed seed). |
+| `custom` | The user's own files imported from the data directory — see [`docs/CUSTOM_DATA.md`](CUSTOM_DATA.md). |
+| `live` | Observations actually collected by the background collection engine. |
+
 ## Routes & weights
 
 `routes` are the 24-route index basket with **provisional** weights. Each route
 carries `base_fare`, `weight`, distance and origin/destination city. Weights are
 identified as `provisional-dgca-v0` and are designed to be replaceable by
 DGCA-derived traffic weights.
+
+Imported data can add routes to the basket. `weight_version` in the API says
+which scheme is in force:
+
+| `weight_version` | Meaning |
+| --- | --- |
+| `provisional-dgca-v0` | The shipped basket weights. |
+| `user-supplied-v1` | Weights you provided in `routes.csv` / `config.json`. |
+| `provisional-observation-share-v1` | No weights supplied — each route is weighted by its share of observations. |
 
 ## Sources
 

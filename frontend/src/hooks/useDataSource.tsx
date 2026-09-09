@@ -10,7 +10,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../lib/api";
-import type { DataMode, StoreCounts, SweepResult } from "../lib/types";
+import type { CustomDataReport, DataMode, StoreCounts, SweepResult } from "../lib/types";
 
 const URL_PARAM = "source";
 
@@ -21,6 +21,10 @@ interface DataSourceValue {
   effectiveMode: DataMode;
   isLive: boolean;
   isDemo: boolean;
+  /** true when the dashboard is serving the user's own imported files */
+  isCustom: boolean;
+  /** provenance for imported data: which files, how they were read, what was dropped */
+  dataFiles?: CustomDataReport;
   ready: boolean;
   busy: boolean;
   collecting: boolean;
@@ -76,6 +80,10 @@ export function DataSourceProvider({ children }: { children: ReactNode }) {
 
   const stateQ = useQuery({ queryKey: ["data-source"], queryFn: api.dataSource, refetchInterval: 60_000 });
 
+  // Provenance for imported data (empty when no files are present). Polled
+  // slowly: dropping a file in should light the dashboard up without a reload.
+  const filesQ = useQuery({ queryKey: ["data-files"], queryFn: api.dataFiles, refetchInterval: 60_000 });
+
   // URL wins on first load, so a link can hand someone the live view directly.
   const initial = useMemo<DataMode | null>(() => {
     const fromUrl = new URLSearchParams(window.location.search).get(URL_PARAM);
@@ -94,6 +102,7 @@ export function DataSourceProvider({ children }: { children: ReactNode }) {
       qc.invalidateQueries({ queryKey: ["data-source"] });
       qc.invalidateQueries({ queryKey: ["collect-status"] });
       // Every analytical screen changes when the source changes.
+      qc.invalidateQueries({ queryKey: ["data-files"] });
       ANALYTICAL_KEYS.forEach((k) => qc.invalidateQueries({ queryKey: [k] }));
     },
     onError: (err: unknown) => {
@@ -147,7 +156,8 @@ export function DataSourceProvider({ children }: { children: ReactNode }) {
             () => {
               qc.invalidateQueries({ queryKey: ["collect-status"] });
               qc.invalidateQueries({ queryKey: ["data-source"] });
-              ANALYTICAL_KEYS.forEach((k) => qc.invalidateQueries({ queryKey: [k] }));
+              qc.invalidateQueries({ queryKey: ["data-files"] });
+      ANALYTICAL_KEYS.forEach((k) => qc.invalidateQueries({ queryKey: [k] }));
               setCollecting(false);
             },
             requestScoped ? 0 : 1500,
@@ -181,7 +191,9 @@ export function DataSourceProvider({ children }: { children: ReactNode }) {
     mode,
     effectiveMode: (statusQ.data?.effective_mode ?? stateQ.data?.effective_mode ?? mode) as DataMode,
     isLive: (statusQ.data?.effective_mode ?? stateQ.data?.effective_mode) === "live",
-    isDemo: (statusQ.data?.effective_mode ?? stateQ.data?.effective_mode ?? "demo") !== "live",
+    isDemo: (statusQ.data?.effective_mode ?? stateQ.data?.effective_mode ?? "demo") === "demo",
+    isCustom: (statusQ.data?.effective_mode ?? stateQ.data?.effective_mode) === "custom",
+    dataFiles: filesQ.data,
     ready: !statusQ.isLoading && !stateQ.isLoading,
     busy: setModeMutation.isPending,
     collecting,
@@ -201,6 +213,7 @@ export function DataSourceProvider({ children }: { children: ReactNode }) {
     refresh: () => {
       qc.invalidateQueries({ queryKey: ["collect-status"] });
       qc.invalidateQueries({ queryKey: ["data-source"] });
+      qc.invalidateQueries({ queryKey: ["data-files"] });
     },
   };
 

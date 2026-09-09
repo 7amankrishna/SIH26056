@@ -8,17 +8,24 @@
 // while the source is blocked would be worse than no indicator at all.
 
 import { useCallback } from "react";
-import { AlertTriangle, Loader2, Moon, RefreshCw, Sun } from "lucide-react";
+import { AlertTriangle, Database, Loader2, Moon, RefreshCw, Sun } from "lucide-react";
 import { useDataSource } from "../hooks/useDataSource";
 import type { DataMode } from "../lib/types";
 
 const OPTIONS: { id: DataMode; label: string; icon: typeof Sun; hint: string }[] = [
-  { id: "demo", label: "Demo data", icon: Moon, hint: "Deterministic synthetic dataset — offline, reproducible" },
+  { id: "demo", label: "Demo data", icon: Moon, hint: "Deterministic synthetic dataset — offline, reproducible (replaced by your own files in data/ when present)" },
   { id: "live", label: "Scraper", icon: Sun, hint: "Fares collected by the background collection engine" },
 ];
 
 export function DataSourceToggle({ withCollectButton = true }: { withCollectButton?: boolean }) {
-  const { mode, isLive, busy, collecting, setMode, collectNow, counts, note, locked, actionError, storeAvailable, storeNote } = useDataSource();
+  const { mode, isLive, isCustom, busy, collecting, setMode, collectNow, counts, note, locked, actionError, storeAvailable, storeNote, dataFiles } = useDataSource();
+
+  // When the user's own files are loaded, the "demo" position really means
+  // "your data" — the label has to say which one is being served.
+  const offlineLabel = isCustom ? "Your data" : "Demo data";
+  const offlineHint = isCustom
+    ? `${(dataFiles?.totals?.observations ?? 0).toLocaleString("en-IN")} observations imported from ${dataFiles?.files?.length ?? 0} file(s) in ${dataFiles?.data_dir ?? "data/"}`
+    : "Deterministic synthetic dataset — offline, reproducible";
 
   const onKey = useCallback(
     (e: React.KeyboardEvent) => {
@@ -66,8 +73,8 @@ export function DataSourceToggle({ withCollectButton = true }: { withCollectButt
         onClick={() => !busy && !locked && setMode(mode === "live" ? "demo" : "live")}
         title={
           mode === "live"
-            ? "Serving data collected by the scraper — click to switch to demo data"
-            : "Serving the deterministic demo dataset — click to serve scraped data"
+            ? "Serving data collected by the scraper — click to switch back"
+            : `${offlineHint} — click to serve scraped data`
         }
         className={`group relative inline-flex select-none items-center rounded-lg border p-0.5 transition-colors ${
           locked ? "cursor-not-allowed opacity-60" : "cursor-pointer"
@@ -86,13 +93,13 @@ export function DataSourceToggle({ withCollectButton = true }: { withCollectButt
           return (
             <span
               key={opt.id}
-              title={opt.hint}
+              title={opt.id === "demo" ? offlineHint : opt.hint}
               className={`relative z-10 flex h-[26px] w-[86px] items-center justify-center gap-1.5 text-[11px] font-semibold transition-colors ${
                 active ? "text-ink-900" : "text-ink-500 group-hover:text-ink-600"
               }`}
             >
               <opt.icon className={`h-3 w-3 ${opt.id === "live" && active ? "text-emerald-700" : ""}`} />
-              {opt.label}
+              {opt.id === "demo" ? offlineLabel : opt.label}
             </span>
           );
         })}
@@ -107,6 +114,20 @@ export function DataSourceToggle({ withCollectButton = true }: { withCollectButt
         >
           <AlertTriangle className="h-3 w-3 shrink-0" />
           {actionError ?? "collection store unavailable"}
+        </span>
+      )}
+
+      {/* Imported-data readout: what your files actually contain. */}
+      {mode !== "live" && isCustom && (
+        <span
+          className="chip hidden bg-sky-50 text-sky-700 md:inline-flex"
+          title={
+            (dataFiles?.files ?? []).map((f) => `${f.name}: ${f.observations.toLocaleString("en-IN")} obs`).join("\n") ||
+            "imported files"
+          }
+        >
+          <Database className="h-3 w-3 shrink-0" />
+          {(dataFiles?.totals?.observations ?? 0).toLocaleString("en-IN")} obs · {dataFiles?.totals?.routes ?? 0} routes
         </span>
       )}
 

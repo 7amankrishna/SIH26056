@@ -36,6 +36,8 @@ consumer.
 | `GET` | `/methodology` | Framework, formula and definitions. |
 | `GET` | `/provenance/{index_id}` | Trace an index value to route contributions. |
 | `GET` | `/stats/overview` | Validation / backtest summary. |
+| `GET` | `/data/files` | Provenance for imported data: every file in the data directory, rows in/observations/rejects, which of your columns mapped to which canonical field, unmapped columns, warnings and errors. |
+| `POST` | `/data/reload` | Rescan the data directory now (the loader normally notices changed files on its own). Returns the same report. |
 
 ### Collection engine (scraper)
 
@@ -55,8 +57,9 @@ consumer.
 
 `GET /api/overview`, `/api/index/*`, `/api/routes`, `/api/airlines`,
 `/api/quality` and `/api/collection-runs` are **mode-aware**: they serve the
-demo dataset or the stored live observations depending on `/data-source`, and every
-response carries `data_origin` so a consumer can tell which it is looking at.
+live, custom or demo dataset (in that order of precedence) and every response
+carries `data_origin` — `live`, `custom` or `demo` — so a consumer can tell which
+it is looking at.
 
 ## Example response
 

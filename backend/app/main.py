@@ -118,7 +118,7 @@ def health() -> dict:
         "status": "ok",
         "version": settings.version,
         "title": settings.title,
-        "demo_mode": ds.origin != "live",
+        "demo_mode": ds.origin == "demo",
         "data_origin": ds.origin,
         "collector_running": collector_running,
         "collector_enabled": settings.collector_enabled,

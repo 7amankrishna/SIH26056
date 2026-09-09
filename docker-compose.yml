@@ -10,6 +10,11 @@ services:
     environment:
       - APIX_DEMO_MODE=1
       - APIX_DEMO_DAYS=90
+      # Your own fare files: drop them in ./data and the dashboard serves them
+      # instead of the synthetic dataset. Mounted read-only, no code change.
+      - APIX_CUSTOM_DATA_DIR=/app/data
+    volumes:
+      - ./data:/app/data:ro
     ports:
       - "8000:8000"
     restart: unless-stopped

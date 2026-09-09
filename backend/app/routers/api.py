@@ -135,6 +135,29 @@ def get_collection_runs() -> dict:
     return collection_runs(ds)
 
 
+@router.get("/data/files", response_model=schemas.CustomDataReport)
+def get_data_files() -> dict:
+    """Provenance for imported data: which files feed the dashboard, how each
+    column was mapped, how many rows were rejected and why.
+
+    This is the audit surface for "is this my data?": it reads straight from the
+    files on disk and is empty, not invented, when no files are present.
+    """
+    from ..custom_data import import_report
+
+    return import_report()
+
+
+@router.post("/data/reload", response_model=schemas.CustomDataReport)
+def reload_data_files() -> dict:
+    """Rescan the data directory now (normally unnecessary — the loader notices
+    changed files on its own, but it is handy right after dropping a file in)."""
+    from ..custom_data import import_report, invalidate_cache
+
+    invalidate_cache()
+    return import_report()
+
+
 @router.get("/methodology", response_model=schemas.Methodology)
 def get_methodology() -> dict:
     return methodology(get_dataset())
