@@ -20,7 +20,7 @@ export function LoadingState({ variant = "block" as LoadVariant }: { variant?: L
 
 export function EmptyState({ title, hint }: { title: string; hint?: string }) {
   return (
-    <div className="flex h-full min-h-[140px] flex-col items-center justify-center gap-2 rounded-xl border border-dashed text-center text-ink-400"
+    <div className="flex h-full min-h-[140px] flex-col items-center justify-center gap-2 rounded-xl border border-dashed text-center text-ink-500"
       style={{ borderColor: "rgb(var(--ink-900) / 0.12)" }}>
       <span className="flex h-10 w-10 items-center justify-center rounded-full bg-ink-100">
         <Inbox className="h-5 w-5 text-ink-500" />

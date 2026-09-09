@@ -26,6 +26,7 @@ import { StatusPill } from "../components/badges";
 import { KpiCard } from "../components/KpiCard";
 import { useCollectFares, useCollectPolicy, useCollectRuns, useCollectStatus, useRawPayloads } from "../hooks/useApi";
 import { useDataSource } from "../hooks/useDataSource";
+import { usePageTitle } from "../hooks/usePageTitle";
 import { formatDateTime, formatINR } from "../lib/format";
 import type { CollectFareRow, RawPayloadRow } from "../lib/types";
 
@@ -39,6 +40,7 @@ const TABS = [
 type TabId = (typeof TABS)[number]["id"];
 
 export default function LiveFeed() {
+  usePageTitle("Live Feed");
   const [tab, setTab] = useState<TabId>("fares");
   const [selected, setSelected] = useState<string | null>(null);
   const { mode, effectiveMode, isLive, collecting, setMode, collectNow, daysCollected } = useDataSource();
@@ -100,7 +102,7 @@ export default function LiveFeed() {
           <div className="flex flex-wrap items-center gap-2">
             <button
               onClick={() => setMode(mode === "live" ? "demo" : "live")}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-ink-200 bg-white px-3 py-1.5 text-xs font-semibold text-ink-700 hover:bg-ink-50"
+              className="btn btn-sm btn-secondary"
             >
               <Activity className="h-3.5 w-3.5" />
               Switch to {mode === "live" ? "demo" : "scraped"}
@@ -108,7 +110,7 @@ export default function LiveFeed() {
             <button
               onClick={collectNow}
               disabled={collecting}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-brand-700 disabled:opacity-60"
+              className="btn btn-sm btn-primary"
             >
               {collecting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
               {collecting ? "Sweep running…" : "Run sweep now"}
@@ -159,7 +161,7 @@ export default function LiveFeed() {
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <div className="flex items-center gap-2">
-                        <Cpu className="h-3.5 w-3.5 text-ink-400" />
+                        <Cpu className="h-3.5 w-3.5 text-ink-500" />
                         <span className="text-sm font-semibold text-ink-800">{s.name}</span>
                         <StatusPill status={s.status === "success" ? "healthy" : s.status === "partial" ? "degraded" : s.status} />
                       </div>
@@ -208,7 +210,7 @@ export default function LiveFeed() {
                         {s.last_run.detail ? ` · ${s.last_run.detail}` : ""}
                       </p>
                     ) : (
-                      <p className="text-ink-400">no sweep has run against this source yet</p>
+                      <p className="text-ink-500">no sweep has run against this source yet</p>
                     )}
                     {s.circuit_open && (
                       <p className="font-medium text-red-700">
@@ -227,18 +229,20 @@ export default function LiveFeed() {
       {/* ---- data tabs ---- */}
       <div className="card">
         <div className="flex flex-wrap items-center gap-1 border-b border-ink-100 px-3 py-2">
-          {TABS.map((t) => (
-            <button
-              key={t.id}
-              onClick={() => setTab(t.id)}
-              className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${
-                tab === t.id ? "bg-brand-50 text-brand-700" : "text-ink-500 hover:bg-ink-50 hover:text-ink-800"
-              }`}
-            >
-              {t.label}
-            </button>
-          ))}
-          <span className="ml-auto pr-2 text-[11px] text-ink-400">
+          <div className="seg flex-wrap border-none p-0" role="tablist" aria-label="Live feed data">
+            {TABS.map((tb) => (
+              <button
+                key={tb.id}
+                role="tab"
+                aria-selected={tab === tb.id}
+                onClick={() => setTab(tb.id)}
+                className={`seg-item ${tab === tb.id ? "seg-item-active" : ""}`}
+              >
+                {tb.label}
+              </button>
+            ))}
+          </div>
+          <span className="ml-auto pr-2 text-[11px] text-ink-500">
             {effectiveMode === "live" ? "store is the source of truth" : "store still available while demo mode is displayed"}
           </span>
         </div>
@@ -257,7 +261,7 @@ export default function LiveFeed() {
           title="Observation ↔ raw payload"
           subtitle="Normalized canonical model beside the bytes it came from — this is the audit pair the methodology relies on."
           actions={
-            <button onClick={() => setSelected(null)} className="rounded-lg border border-ink-200 px-2.5 py-1 text-xs text-ink-600 hover:bg-ink-50">
+            <button onClick={() => setSelected(null)} className="btn btn-sm btn-secondary">
               Close
             </button>
           }
@@ -270,7 +274,7 @@ export default function LiveFeed() {
                   <tbody className="divide-y divide-ink-100">
                     {selectedRow.fare &&
                       Object.entries(selectedRow.fare).map(([k, v]) => (
-                        <tr key={k} className="bg-white">
+                        <tr key={k} className="bg-surface">
                           <td className="w-40 px-3 py-1.5 font-medium text-ink-500">{k}</td>
                           <td className="px-3 py-1.5 font-mono text-ink-800">
                             {typeof v === "number" ? v.toLocaleString("en-IN") : String(v ?? "—")}
@@ -283,7 +287,7 @@ export default function LiveFeed() {
             </div>
             <div>
               <p className="section-title mb-2">Source payload verbatim</p>
-              <pre className="max-h-80 overflow-auto rounded-lg border border-ink-200 bg-ink-900 p-3 text-[11px] leading-relaxed text-ink-100">
+              <pre className="max-h-80 overflow-auto rounded-lg border p-3 font-mono text-[11px] leading-relaxed text-code-fg bg-code-bg ring-1" style={{ borderColor: "rgb(255 255 255 / 0.08)" }}>
                 {selectedRow.payload ? JSON.stringify(selectedRow.payload.payload, null, 2) : "No archived payload matched this row."}
               </pre>
             </div>
@@ -298,9 +302,9 @@ export default function LiveFeed() {
 
 function MiniStat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-md border border-ink-200 bg-white py-1.5">
+    <div className="rounded-md border border-ink-200 bg-surface py-1.5 transition-colors duration-150">
       <div className="text-sm font-bold tabular-nums text-ink-800">{value}</div>
-      <div className="text-[10px] uppercase tracking-wide text-ink-400">{label}</div>
+      <div className="text-[10px] uppercase tracking-wide text-ink-500">{label}</div>
     </div>
   );
 }
@@ -316,7 +320,7 @@ function FaresTable({
   onSelect: (id: string) => void;
   selected: string | null;
 }) {
-  if (loading) return <DataBoundary isLoading children={null} />;
+  if (loading) return <DataBoundary isLoading variant="table" children={null} />;
   if (!rows.length)
     return (
       <DataBoundary
@@ -329,7 +333,7 @@ function FaresTable({
   return (
     <div className="max-h-[460px] overflow-auto">
       <table className="w-full text-left text-xs">
-        <thead className="sticky top-0 bg-ink-50 text-[10px] uppercase tracking-wide text-ink-500">
+        <thead className="sticky top-0 bg-ink-50 text-[10px] uppercase tracking-wide text-ink-500 backdrop-blur">
           <tr>
             {["collected", "route", "airline", "flight", "dep date", "lead", "fare", "seats", "status", ""].map((h) => (
               <th key={h} className="whitespace-nowrap px-3 py-2 font-semibold">
@@ -356,7 +360,7 @@ function FaresTable({
               <td className="px-3 py-1.5">
                 <StatusPill status={r.quality_status} />
               </td>
-              <td className="px-3 py-1.5 text-ink-400">
+              <td className="px-3 py-1.5 text-ink-500">
                 <ChevronRight className="h-3.5 w-3.5" />
               </td>
             </tr>
@@ -369,7 +373,7 @@ function FaresTable({
 
 function RawTable({ rows, loading }: { rows: RawPayloadRow[]; loading: boolean }) {
   const [open, setOpen] = useState<number | null>(0);
-  if (loading) return <DataBoundary isLoading children={null} />;
+  if (loading) return <DataBoundary isLoading variant="table" children={null} />;
   if (!rows.length)
     return <DataBoundary isEmpty emptyTitle="No payloads archived yet" emptyHint="Every successful response is stored verbatim before parsing." children={null} />;
   return (
@@ -384,13 +388,13 @@ function RawTable({ rows, loading }: { rows: RawPayloadRow[]; loading: boolean }
               {r.http_status}
             </span>
             <span className="font-mono text-ink-700">{r.source}</span>
-            <span className="truncate font-mono text-ink-400">{r.url}</span>
-            <span className="ml-auto shrink-0 tabular-nums text-ink-400">
+            <span className="truncate font-mono text-ink-500">{r.url}</span>
+            <span className="ml-auto shrink-0 tabular-nums text-ink-500">
               {r.latency_ms ? `${r.latency_ms} ms` : "—"} · {formatDateTime(r.fetched_at)}
             </span>
           </button>
           {open === i && (
-            <pre className="max-h-72 overflow-auto bg-ink-900 p-3 text-[11px] leading-relaxed text-ink-100">
+            <pre className="max-h-72 overflow-auto bg-code-bg p-3 font-mono text-[11px] leading-relaxed text-code-fg">
               {JSON.stringify({ query: r.query, payload: r.payload }, null, 2)}
             </pre>
           )}
@@ -401,7 +405,7 @@ function RawTable({ rows, loading }: { rows: RawPayloadRow[]; loading: boolean }
 }
 
 function RunsTable({ runs, loading }: { runs: import("../lib/types").CollectionRun[]; loading: boolean }) {
-  if (loading) return <DataBoundary isLoading children={null} />;
+  if (loading) return <DataBoundary isLoading variant="table" children={null} />;
   if (!runs.length)
     return <DataBoundary isEmpty emptyTitle="No sweeps recorded yet" emptyHint="Scheduled and manual sweeps both land here." children={null} />;
   const tone: Record<string, string> = {
@@ -414,7 +418,7 @@ function RunsTable({ runs, loading }: { runs: import("../lib/types").CollectionR
   return (
     <div className="max-h-[460px] overflow-auto">
       <table className="w-full text-left text-xs">
-        <thead className="sticky top-0 bg-ink-50 text-[10px] uppercase tracking-wide text-ink-500">
+        <thead className="sticky top-0 bg-ink-50 text-[10px] uppercase tracking-wide text-ink-500 backdrop-blur">
           <tr>
             {["started", "source", "status", "queries", "reqs", "stored", "valid", "dupes", "susp", "fail", "ms", "trigger", "detail"].map((h) => (
               <th key={h} className="whitespace-nowrap px-3 py-2 font-semibold">
@@ -457,7 +461,7 @@ function RunsTable({ runs, loading }: { runs: import("../lib/types").CollectionR
 function PolicyPanel({ policy }: { policy?: import("../lib/types").CollectionPolicy }) {
   if (!policy)
     return (
-      <div className="flex items-center gap-2 p-4 text-xs text-ink-400">
+      <div className="flex items-center gap-2 p-4 text-xs text-ink-500">
         <Database className="h-3.5 w-3.5" /> Loading policy…
       </div>
     );
@@ -477,7 +481,7 @@ function PolicyPanel({ policy }: { policy?: import("../lib/types").CollectionPol
         <div className="mt-3 grid grid-cols-2 gap-2 text-[11px] sm:grid-cols-3">
           {Object.entries(p).map(([k, v]) => (
             <div key={k} className="rounded-md border border-ink-200 bg-ink-50 px-2 py-1.5">
-              <div className="text-ink-400">{k.replace(/_/g, " ")}</div>
+              <div className="text-ink-500">{k.replace(/_/g, " ")}</div>
               <div className="font-mono font-semibold text-ink-700">{typeof v === "object" ? JSON.stringify(v) : String(v)}</div>
             </div>
           ))}

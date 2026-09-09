@@ -15,11 +15,15 @@ import { DeltaBadge } from "../components/badges";
 import { DataBoundary } from "../components/DataState";
 import { FilterBar } from "../components/FilterBar";
 import { useAirlines } from "../hooks/useApi";
+import { useChartTheme } from "../hooks/useChartTheme";
 import { useFilters } from "../hooks/useFilters";
+import { usePageTitle } from "../hooks/usePageTitle";
 import { formatINR } from "../lib/format";
 
 export default function Airlines() {
   const { route } = useFilters();
+  usePageTitle("Airlines");
+  const t = useChartTheme();
   const { data, isLoading, isError, error } = useAirlines(route ?? undefined);
   const airlines = data?.airlines ?? [];
 
@@ -55,16 +59,16 @@ export default function Airlines() {
 
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
         <ChartCard title="Average vs Median Fare by Airline" subtitle="Fares differ by route mix; treat as observed, not controlled">
-          <DataBoundary isLoading={isLoading} isError={isError} error={error} isEmpty={!chartData.length} emptyTitle="No airline data">
+          <DataBoundary isLoading={isLoading} isError={isError} error={error} isEmpty={!chartData.length} emptyTitle="No airline data" variant="chart">
             <div className="h-[320px]">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={chartData} margin={{ top: 10, right: 10, bottom: 0, left: -8 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#eef2f7" vertical={false} />
-                  <XAxis dataKey="name" tick={{ fontSize: 11 }} axisLine={false} tickLine={false} />
-                  <YAxis tick={{ fontSize: 11 }} axisLine={false} tickLine={false} width={56} tickFormatter={(v) => `₹${(v / 1000).toFixed(0)}k`} />
-                  <Tooltip content={<ChartTooltip />} cursor={{ fill: "#f8fafc" }} />
-                  <Bar dataKey="avg_fare" name="Avg fare" fill="#0891b2" radius={[4, 4, 0, 0]} />
-                  <Bar dataKey="median_fare" name="Median fare" fill="#6366f1" radius={[4, 4, 0, 0]} />
+                  <CartesianGrid strokeDasharray="3 3" stroke={t.grid} vertical={false} />
+                  <XAxis dataKey="name" tick={{ fontSize: 11, fill: t.tick }} axisLine={false} tickLine={false} />
+                  <YAxis tick={{ fontSize: 11, fill: t.tick }} axisLine={false} tickLine={false} width={56} tickFormatter={(v) => `₹${(v / 1000).toFixed(0)}k`} />
+                  <Tooltip content={<ChartTooltip />} cursor={{ fill: t.cursor }} />
+                  <Bar dataKey="avg_fare" name="Avg fare" fill={t.brand} radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="median_fare" name="Median fare" fill={t.indigo} radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
@@ -79,11 +83,11 @@ export default function Airlines() {
       </div>
 
       <ChartCard title="Airline Comparison Table" subtitle="Observed fare · normalized index contribution · quality" pad={false}>
-        <DataBoundary isLoading={isLoading} isError={isError} error={error} isEmpty={!airlines.length} emptyTitle="No airline data">
+        <DataBoundary isLoading={isLoading} isError={isError} error={error} isEmpty={!airlines.length} emptyTitle="No airline data" variant="table">
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-ink-100 text-left text-[11px] uppercase tracking-wide text-ink-400">
+                <tr className="border-b border-ink-100 text-left text-[11px] uppercase tracking-wide text-ink-500">
                   <th className="px-5 py-2.5 font-medium">Airline</th>
                   <th className="px-3 py-2.5 font-medium">Avg fare</th>
                   <th className="px-3 py-2.5 font-medium">Median fare</th>
@@ -94,12 +98,12 @@ export default function Airlines() {
                   <th className="px-3 py-2.5 font-medium">Obs</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-ink-50">
+              <tbody className="divide-y divide-ink-100/70">
                 {airlines.map((a) => (
                   <tr key={a.airline} className="hover:bg-ink-50">
                     <td className="px-5 py-2.5">
                       <div className="font-medium text-ink-800">{a.name}</div>
-                      <div className="text-[11px] text-ink-400">{a.airline} · {a.alliance} · {a.hub}</div>
+                      <div className="text-[11px] text-ink-500">{a.airline} · {a.alliance} · {a.hub}</div>
                     </td>
                     <td className="px-3 py-2.5 tabular-nums text-ink-700">{formatINR(a.avg_fare)}</td>
                     <td className="px-3 py-2.5 tabular-nums text-ink-700">{formatINR(a.median_fare)}</td>
@@ -146,7 +150,7 @@ function AirlineMatrix({ airlines }: { airlines: any[] }) {
           </div>
         );
       })}
-      <p className="pt-1 text-[11px] text-ink-400">Bubble size = observation volume. Index contribution is normalized (relative to all-airline average).</p>
+      <p className="pt-1 text-[11px] text-ink-500">Bubble size = observation volume. Index contribution is normalized (relative to all-airline average).</p>
     </div>
   );
 }

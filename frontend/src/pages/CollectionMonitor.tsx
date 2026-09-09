@@ -9,8 +9,10 @@ import { DataBoundary } from "../components/DataState";
 import { useCollectionRuns, useQuality } from "../hooks/useApi";
 import { formatDateTime, formatNumber, formatPercent } from "../lib/format";
 import { useDataSource } from "../hooks/useDataSource";
+import { usePageTitle } from "../hooks/usePageTitle";
 
 export default function CollectionMonitor() {
+  usePageTitle("Collection Monitor");
   const { data, isLoading, isError, error } = useCollectionRuns();
   const { data: quality } = useQuality();
   const { isLive, collectNow, collecting, counts } = useDataSource();
@@ -55,11 +57,7 @@ export default function CollectionMonitor() {
             )}
           </span>
           {isLive && (
-            <button
-              onClick={collectNow}
-              disabled={collecting}
-              className="rounded-lg border border-ink-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-ink-600 hover:bg-ink-50 disabled:opacity-60"
-            >
+            <button onClick={collectNow} disabled={collecting} className="btn btn-sm btn-secondary">
               {collecting ? "Collecting…" : "Sweep now"}
             </button>
           )}
@@ -77,11 +75,11 @@ export default function CollectionMonitor() {
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
         <div className="lg:col-span-2">
           <ChartCard title="Source Pipeline Health" subtitle="Live sources only — disabled sources are never shown as live" pad={false}>
-            <DataBoundary isLoading={isLoading} isError={isError} error={error} isEmpty={!sources.length} emptyTitle="No source data">
+            <DataBoundary isLoading={isLoading} isError={isError} error={error} isEmpty={!sources.length} emptyTitle="No source data" variant="table">
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
-                    <tr className="border-b border-ink-100 text-left text-[11px] uppercase tracking-wide text-ink-400">
+                    <tr className="border-b border-ink-100 text-left text-[11px] uppercase tracking-wide text-ink-500">
                       <th className="px-5 py-2.5 font-medium">Source</th>
                       <th className="px-3 py-2.5 font-medium">Status</th>
                       <th className="px-3 py-2.5 font-medium">Last run</th>
@@ -93,12 +91,12 @@ export default function CollectionMonitor() {
                       <th className="px-3 py-2.5 font-medium">CB</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-ink-50">
+                  <tbody className="divide-y divide-ink-100/70">
                     {sources.map((s) => (
                       <tr key={s.source} className={statusActive(s.status) ? "hover:bg-ink-50" : "opacity-60"} title={s.last_error ?? undefined}>
                         <td className="px-5 py-2.5">
                           <div className="font-medium text-ink-800">{s.name}</div>
-                          <div className="text-[11px] text-ink-400">{s.adapter}</div>
+                          <div className="text-[11px] text-ink-500">{s.adapter}</div>
                         </td>
                         <td className="px-3 py-2.5"><StatusPill status={s.status} /></td>
                         <td className="px-3 py-2.5 tabular-nums text-ink-500">{s.last_run ? formatDateTime(s.last_run) : "—"}</td>
@@ -141,7 +139,7 @@ export default function CollectionMonitor() {
         </div>
 
         <ChartCard title="Operational Metrics" subtitle="System-level collection & quality observability">
-          <DataBoundary isLoading={isLoading || !quality} isError={isError} error={error} isEmpty={!operational.length} emptyTitle="No metrics">
+          <DataBoundary isLoading={isLoading || !quality} isError={isError} error={error} isEmpty={!operational.length} emptyTitle="No metrics" variant="text">
             <div className="space-y-2.5">
               {operational.map((m) => (
                 <div key={m.label} className="flex items-center justify-between rounded-lg border border-ink-100 px-3 py-2">
@@ -194,7 +192,7 @@ function MetricCard({ label, value, tone }: { label: string; value: string | num
   const t = tones[tone];
   return (
     <div className={`card p-4`}>
-      <div className="text-[11px] uppercase tracking-wide text-ink-400">{label}</div>
+      <div className="text-[11px] uppercase tracking-wide text-ink-500">{label}</div>
       <div className={`mt-1 inline-flex items-center rounded-lg px-2.5 py-1 text-lg font-bold ${t.bg} ${t.text} ${t.border}`}>
         {value}
       </div>
