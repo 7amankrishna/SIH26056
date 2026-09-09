@@ -16,6 +16,16 @@ export default defineConfig({
         target: process.env.VITE_API_TARGET || "http://localhost:8000",
         changeOrigin: true,
       },
+      // Parity with the nginx container: the API page links to the
+      // interactive OpenAPI docs, so dev should serve them from the backend too.
+      "/docs": {
+        target: process.env.VITE_API_TARGET || "http://localhost:8000",
+        changeOrigin: true,
+      },
+      "/openapi.json": {
+        target: process.env.VITE_API_TARGET || "http://localhost:8000",
+        changeOrigin: true,
+      },
     },
   },
   build: {

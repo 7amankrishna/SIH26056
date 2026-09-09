@@ -9,10 +9,14 @@ import { RouteHeatmap } from "../components/RouteHeatmap";
 import { Sparkline } from "../components/Sparkline";
 import { FilterBar } from "../components/FilterBar";
 import { useOverview, useRoutes } from "../hooks/useApi";
+import { useChartTheme } from "../hooks/useChartTheme";
+import { usePageTitle } from "../hooks/usePageTitle";
 import { formatIndex, formatINR, formatNumber, formatPercent } from "../lib/format";
 
 export default function Overview() {
   const navigate = useNavigate();
+  const t = useChartTheme();
+  usePageTitle("Overview");
   const { data: overview, isLoading, isError, error } = useOverview();
   const { data: routesData } = useRoutes();
 
@@ -24,7 +28,7 @@ export default function Overview() {
     .slice(0, 3);
 
   const deltaColor = (v: number | null | undefined) =>
-    v == null ? "text-ink-400" : v > 0 ? "text-red-600" : v < 0 ? "text-emerald-600" : "text-ink-400";
+    v == null ? "text-ink-500" : v > 0 ? "text-red-600" : v < 0 ? "text-emerald-700" : "text-ink-500";
 
   return (
     <div className="space-y-5">
@@ -43,7 +47,7 @@ export default function Overview() {
           label="APIx"
           value={formatIndex(overview?.current_apix)}
           loading={isLoading}
-          accent="#0891b2"
+          accent={t.brand}
           icon={<Activity className="h-5 w-5" />}
           delta={overview && <DeltaBadge value={overview.daily_change} />}
         />
@@ -74,14 +78,14 @@ export default function Overview() {
           value={formatNumber(overview?.observation_count)}
           loading={isLoading}
           icon={<Layers className="h-5 w-5" />}
-          sub={<span className="text-ink-400">in current window</span>}
+          sub={<span className="text-ink-500">in current window</span>}
         />
         <KpiCard
           label="Coverage"
           value={`${overview?.route_count ?? "—"} routes`}
           loading={isLoading}
           icon={<Route className="h-5 w-5" />}
-          sub={<span className="text-ink-400">{overview?.source_count ?? "—"} sources · {overview?.airline_count ?? "—"} airlines</span>}
+          sub={<span className="text-ink-500">{overview?.source_count ?? "—"} sources · {overview?.airline_count ?? "—"} airlines</span>}
         />
       </div>
 
@@ -93,7 +97,7 @@ export default function Overview() {
         <div className="flex items-center justify-between border-b border-ink-100 px-5 py-3.5">
           <div>
             <h3 className="text-sm font-semibold text-ink-800">India Airfare Route Heatmap</h3>
-            <p className="mt-0.5 text-xs text-ink-400">Origin × destination, encoded by route movement. Hover a cell for detail.</p>
+            <p className="mt-0.5 text-xs text-ink-500">Origin × destination, encoded by route movement. Hover a cell for detail.</p>
           </div>
         </div>
         <div className="p-5">
@@ -121,28 +125,29 @@ function RouteRanking({
   down?: boolean;
 }) {
   const navigate = useNavigate();
+  const t = useChartTheme();
   return (
     <div className="card">
       <div className="border-b border-ink-100 px-5 py-3.5">
         <h3 className="text-sm font-semibold text-ink-800">{title}</h3>
       </div>
       <div className="divide-y divide-ink-100">
-        {routes.length === 0 && <div className="p-6 text-sm text-ink-400">No routes in this category.</div>}
+        {routes.length === 0 && <div className="p-6 text-sm text-ink-500">No routes in this category.</div>}
         {routes.map((r, i) => (
           <button
             key={r.route}
             onClick={() => navigate(`/routes?route=${r.route}`)}
-            className="flex w-full items-center gap-4 px-5 py-3 text-left transition-colors hover:bg-ink-50"
+            className="flex w-full items-center gap-4 px-5 py-3 text-left transition-colors duration-150 hover:bg-ink-50"
           >
-            <span className="w-6 text-center text-sm font-bold text-ink-300">{i + 1}</span>
+            <span className="w-6 text-center text-sm font-bold text-ink-500">{i + 1}</span>
             <div className="min-w-0 flex-1">
               <div className="truncate text-sm font-medium text-ink-800">
                 {r.origin_city} → {r.destination_city}
               </div>
-              <div className="text-xs text-ink-400">₹{r.current_fare?.toLocaleString("en-IN") ?? "—"}</div>
+              <div className="text-xs text-ink-500">₹{r.current_fare?.toLocaleString("en-IN") ?? "—"}</div>
             </div>
-            <Sparkline data={r.sparkline} color={up ? "#dc2626" : "#10b981"} />
-            <span className={`w-20 text-right text-sm font-semibold tabular-nums ${up ? "text-red-600" : "text-emerald-600"}`}>
+            <Sparkline data={r.sparkline} color={up ? t.red : t.emerald} />
+            <span className={`w-20 text-right text-sm font-semibold tabular-nums ${up ? "text-red-600 dark:text-red-400" : "text-emerald-700 dark:text-emerald-400"}`}>
               {r.change_7d != null ? `${r.change_7d > 0 ? "+" : ""}${r.change_7d.toFixed(1)}%` : "—"}
             </span>
           </button>

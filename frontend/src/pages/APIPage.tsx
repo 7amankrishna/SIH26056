@@ -2,6 +2,7 @@
 
 import { ExternalLink, FileJson } from "lucide-react";
 import { useHealth } from "../hooks/useApi";
+import { usePageTitle } from "../hooks/usePageTitle";
 import { formatDateTime } from "../lib/format";
 
 const ENDPOINTS: { method: string; path: string; desc: string }[] = [
@@ -26,6 +27,7 @@ const ENDPOINTS: { method: string; path: string; desc: string }[] = [
 ];
 
 export default function APIPage() {
+  usePageTitle("API / Data Access");
   const { data: health } = useHealth();
 
   return (
@@ -37,17 +39,17 @@ export default function APIPage() {
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <div className="card p-4">
-          <div className="text-[11px] uppercase tracking-wide text-ink-400">Base URL</div>
-          <div className="mt-1 font-mono text-sm text-ink-800">{health ? "/api" : "/api"}</div>
+          <div className="text-[11px] uppercase tracking-wide text-ink-500">Base URL</div>
+          <div className="mt-1 font-mono text-sm text-ink-800">/api</div>
         </div>
         <div className="card p-4">
-          <div className="text-[11px] uppercase tracking-wide text-ink-400">Interactive docs</div>
+          <div className="text-[11px] uppercase tracking-wide text-ink-500">Interactive docs</div>
           <a href="/docs" target="_blank" className="mt-1 inline-flex items-center gap-1.5 font-mono text-sm text-brand-700 hover:underline">
             <ExternalLink className="h-3.5 w-3.5" /> /docs
           </a>
         </div>
         <div className="card p-4">
-          <div className="text-[11px] uppercase tracking-wide text-ink-400">Version</div>
+          <div className="text-[11px] uppercase tracking-wide text-ink-500">Version</div>
           <div className="mt-1 font-mono text-sm text-ink-800">{health?.version ?? "0.1.0"} {health?.demo_mode ? "· demo" : ""}</div>
         </div>
       </div>
@@ -55,9 +57,9 @@ export default function APIPage() {
       <div className="card">
         <div className="flex items-center justify-between border-b border-ink-100 px-5 py-3.5">
           <h3 className="text-sm font-semibold text-ink-800">Endpoints</h3>
-          <span className="text-xs text-ink-400">{ENDPOINTS.length} endpoints · JSON responses · no auth required (demo)</span>
+          <span className="text-xs text-ink-500">{ENDPOINTS.length} endpoints · JSON responses · no auth required (demo)</span>
         </div>
-        <div className="divide-y divide-ink-50">
+        <div className="divide-y divide-ink-100/70">
           {ENDPOINTS.map((e) => (
             <div key={e.path} className="flex flex-col gap-1 px-5 py-3 sm:flex-row sm:items-center sm:gap-4">
               <span className="shrink-0 rounded bg-emerald-50 px-2 py-0.5 text-xs font-bold text-emerald-700">{e.method}</span>
@@ -81,7 +83,7 @@ export default function APIPage() {
       </div>
 
       {health && (
-        <div className="card p-4 text-xs text-ink-400">
+        <div className="card p-4 text-xs text-ink-500">
           Service: {health.title} · uptime {Math.round(health.uptime_seconds)}s · data window {health.period_start} → {health.period_end} · last health check {formatDateTime(new Date().toISOString())}
         </div>
       )}

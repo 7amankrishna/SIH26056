@@ -10,10 +10,12 @@ import { Sparkline } from "../components/Sparkline";
 import { DeltaBadge } from "../components/badges";
 import { DataBoundary } from "../components/DataState";
 import { useOverview, useProvenance, useRoutes } from "../hooks/useApi";
+import { usePageTitle } from "../hooks/usePageTitle";
 import { formatINR } from "../lib/format";
 
 export default function AirfareIndex() {
   const navigate = useNavigate();
+  usePageTitle("Airfare Index");
   const { data: overview } = useOverview();
   const latest = overview?.data_period?.end ?? "";
   const { data: prov, isLoading, isError, error } = useProvenance(latest);
@@ -46,7 +48,7 @@ export default function AirfareIndex() {
                   <button
                     key={c.route}
                     onClick={() => navigate(`/routes?route=${c.route}`)}
-                    className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-ink-50"
+                    className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 transition-colors duration-150 hover:bg-ink-50"
                   >
                     <span className="flex-1 text-left text-xs font-medium text-ink-700">{c.route}</span>
                     <span className="w-16 text-right text-xs tabular-nums text-ink-500">{c.index.toFixed(1)}</span>
@@ -72,11 +74,11 @@ function RouteIndexTable() {
   const navigate = useNavigate();
   return (
     <ChartCard title="Route Indices" subtitle="Route-level APIx and 7-day movement" pad={false}>
-      <DataBoundary isLoading={isLoading} isError={isError} error={error} isEmpty={!data?.routes.length} emptyTitle="No route indices">
+      <DataBoundary isLoading={isLoading} isError={isError} error={error} isEmpty={!data?.routes.length} emptyTitle="No route indices" variant="table">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-ink-100 text-left text-[11px] uppercase tracking-wide text-ink-400">
+              <tr className="border-b border-ink-100 text-left text-[11px] uppercase tracking-wide text-ink-500">
                 <th className="px-5 py-2.5 font-medium">Route</th>
                 <th className="px-3 py-2.5 font-medium">Current fare</th>
                 <th className="px-3 py-2.5 font-medium">Index</th>
@@ -88,7 +90,7 @@ function RouteIndexTable() {
                 <th />
               </tr>
             </thead>
-            <tbody className="divide-y divide-ink-50">
+            <tbody className="divide-y divide-ink-100/70">
               {(data?.routes ?? []).map((r) => (
                 <tr key={r.route} onClick={() => navigate(`/routes?route=${r.route}`)} className="cursor-pointer hover:bg-ink-50">
                   <td className="px-5 py-2.5 font-medium text-ink-800">
@@ -101,7 +103,7 @@ function RouteIndexTable() {
                   <td className="px-3 py-2.5 tabular-nums text-ink-500">{r.observations}</td>
                   <td className="px-3 py-2.5 tabular-nums text-ink-500">{r.quality ?? "—"}%</td>
                   <td className="px-3 py-2.5"><Sparkline data={r.sparkline} /></td>
-                  <td className="px-3 py-2.5 text-ink-300"><ArrowRight className="h-4 w-4" /></td>
+                  <td className="px-3 py-2.5 text-ink-500"><ArrowRight className="h-4 w-4" /></td>
                 </tr>
               ))}
             </tbody>

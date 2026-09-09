@@ -14,6 +14,25 @@ product.
 
 ---
 
+## UI / design system
+
+The dashboard is a token-driven design system (`docs/UI_AUDIT.md` has the full
+audit): every color is a CSS variable surfaced as a Tailwind token, so the whole
+app re-themes by flipping one class.
+
+- **Dark mode** — toggle in the header, `system` default, persisted, OS-synced,
+  no flash on load (pre-paint inline script); charts, heatmap, tooltips and
+  code panes all adapt. Surfaces: `#0a0a0b` page → `#141417` cards → `#1c1c20`
+  elevated; never pure black.
+- **WCAG AA verified in both themes** — text, chips, buttons, heatmap cells and
+  tooltips were checked numerically against the shipped token values.
+- **Heatmap tooltip** — portal-rendered and `position: fixed`, so it can never
+  be clipped by the matrix scroll container; solid dark-glass surface with
+  backdrop blur in both themes.
+- **Skeleton loaders** for every async view (charts, tables, stats), consistent
+  button/segment control system, visible `:focus-visible` rings, reduced-motion
+  support, per-route document titles, self-hosted Inter Variable (offline-safe).
+
 ## What works today (demo-ready)
 
 The entire system runs **fully offline and deterministically** from a built-in
@@ -37,7 +56,7 @@ point the same pipeline at instead.
 
 | Layer | Status |
 | --- | --- |
-| Dashboard (React + TypeScript + Tailwind + Recharts) | ✅ polished, API-backed |
+| Dashboard (React + TypeScript + Tailwind + Recharts) | ✅ polished, API-backed, dark mode |
 | REST API (FastAPI + Pydantic) | ✅ typed & documented |
 | Index engine (route/airline/lead-time/aggregate APIx) | ✅ deterministic |
 | Quality engine (VALID / SUSPICIOUS / DUPLICATE / INVALID / SOLD_OUT / STALE) | ✅ auditable |
@@ -63,29 +82,10 @@ wrapper is required — Vercel runs the ASGI app natively.
    to build `frontend/dist`, and deploys.
 3. The dashboard and the API share one URL.
 
-The scraper works on Vercel with no configuration at all (a clearly-labelled
-temporary store under `/tmp`). **On Vercel, `DATABASE_URL` is ignored by default**,
-even if an old value is still in the project settings. To make collected history
-survive a cold start or redeploy, set `APIX_IGNORE_DATABASE_URL=0` and set
-`DATABASE_URL` to a Supabase PostgreSQL connection string, then paste
-[`db/supabase_schema.sql`](db/supabase_schema.sql) into Supabase's SQL editor.
-Step-by-step, without a terminal: [Setup guide](docs/SETUP_GUIDE.md).
-
 Files that make this work: `api/index.py` (re-exports the FastAPI `app`),
-`vercel.json` (install/build commands + function `maxDuration`), and root
-`requirements.txt`.
+`pyproject.toml` (`[tool.vercel] entrypoint`), `vercel.json`
+(install/build commands + function `maxDuration`), and root `requirements.txt`.
 See [Deployment](docs/DEPLOYMENT.md#option-a--vercel-recommended-for-a-public-demo).
-
-The scraper works on Vercel as well: the runtime has no process lifetime for a
-background loop, so the collector detects that and runs each sweep *inside* the
-request that asks for it — flipping the dashboard to **Scraper** collects and
-switches in one round trip. By default the Vercel store is SQLite under `/tmp`,
-which the API and the Live Feed screen label **ephemeral** (per instance, reset on
-cold start/redeploy). A stale, malformed or unreachable `DATABASE_URL` cannot
-disable this demo path; PostgreSQL requires `APIX_IGNORE_DATABASE_URL=0` plus a
-valid `DATABASE_URL` for durable collection history. Storage that cannot be used
-at all degrades the scraper only: `/api/health` still answers, and `POST /api/data-source` returns a
-`503` that says why instead of an opaque `500`.
 
 OpenAPI docs land at `/docs` on the deployed URL.
 
@@ -132,12 +132,6 @@ APIX_COLLECTOR_SOURCES=fixture_html \   # or: fixture (JSON capture), amadeus, h
 APIX_MIN_REQUEST_GAP_SECONDS=0 \
 .venv/bin/python -m uvicorn app.main:app --port 8000
 ```
-
-On a serverless runtime (`VERCEL` set) the background loop is off by default and
-`APIX_DATA_DIR` defaults to `/tmp/apix-data`, because no process survives between
-requests: `POST /api/collect/sweep` then runs the sweep inside the request and
-returns its result. See
-[Deployment → Sweeps on a request-scoped runtime](docs/DEPLOYMENT.md#sweeps-on-a-request-scoped-runtime).
 
 `fixture_html` is the one to show a jury: the collector fetches an HTML fare
 **page** and extracts offers with CSS-ish selectors (`div.offer`, `span.price`,
@@ -207,7 +201,6 @@ period as history accrues.
 
 ## Documentation
 
-- [Setup guide — Vercel + Supabase, click-only](docs/SETUP_GUIDE.md)
 - [Architecture](docs/ARCHITECTURE.md)
 - [Index methodology](docs/METHODOLOGY.md)
 - [Data dictionary](docs/DATA_DICTIONARY.md)

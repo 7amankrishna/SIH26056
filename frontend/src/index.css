@@ -2,46 +2,287 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ============================================================================
+   APIx design tokens — light theme (default) and dark theme (.dark on <html>)
+   Values are raw R G B channel triplets so Tailwind can apply alpha modifiers.
+   ========================================================================= */
+
 :root {
   color-scheme: light;
+
+  /* surfaces */
+  --page: 241 245 249; /* slate-100 */
+  --surface: 255 255 255;
+  --elevated: 255 255 255;
+  --code-bg: 15 23 42; /* slate-900 — code blocks stay dark in both themes */
+  --code-fg: 226 232 240;
+  --code-muted: 148 163 184;
+
+  /* neutral ink scale (text + fills) */
+  --ink-900: 15 23 42;
+  --ink-800: 30 41 59;
+  --ink-700: 51 65 85;
+  --ink-600: 71 85 105;
+  --ink-500: 100 116 139; /* 4.76:1 on white — AA for body text */
+  --ink-400: 148 163 184; /* decorative / large only in light */
+  --ink-300: 203 213 225;
+  --ink-200: 226 232 240;
+  --ink-100: 241 245 249;
+  --ink-50: 248 250 252;
+
+  /* brand — cyan; 600/700 darkened so white label text passes AA */
+  --brand-700: 14 116 144; /* #0e7490 — 4.9:1 with white */
+  --brand-600: 8 145 178;
+  --brand-500: 6 182 212;
+  --brand-400: 34 211 238;
+  --brand-300: 103 232 249;
+  --brand-50: 236 254 255;
+
+  --accent: 99 102 241; /* indigo-500 */
+  --accent-fg: 255 255 255;
+
+  /* semantic scales */
+  --emerald-50: 236 253 245;
+  --emerald-100: 209 250 229;
+  --emerald-200: 167 243 208;
+  --emerald-300: 110 231 183;
+  --emerald-400: 52 211 153;
+  --emerald-500: 16 185 129;
+  --emerald-600: 5 150 105;
+  --emerald-700: 4 120 87;
+  --emerald-800: 6 95 70;
+  --emerald-900: 6 78 59;
+
+  --amber-50: 255 251 235;
+  --amber-100: 254 243 199;
+  --amber-200: 253 230 138;
+  --amber-500: 245 158 11;
+  --amber-600: 217 119 6;
+  --amber-700: 180 83 9;
+  --amber-800: 146 64 14;
+
+  --red-50: 254 242 242;
+  --red-100: 254 226 226;
+  --red-200: 254 202 202;
+  --red-400: 248 113 113;
+  --red-500: 239 68 68;
+  --red-600: 220 38 38;
+  --red-700: 185 28 28;
+  --red-800: 153 27 27;
+
+  --sky-50: 240 249 255;
+  --sky-100: 224 242 254;
+  --sky-200: 186 230 253;
+  --sky-400: 56 189 248;
+  --sky-500: 14 165 233;
+  --sky-600: 2 132 199;
+  --sky-700: 3 105 161;
+  --sky-800: 7 89 133;
+
+  --purple-50: 250 245 255;
+  --purple-700: 126 34 206;
+
+  --violet-50: 245 243 255;
+  --violet-700: 109 40 217;
+
+  --orange-50: 255 247 237;
+  --orange-700: 194 65 12;
+
+  --slate-200: 226 232 240;
+  --slate-400: 148 163 184;
+
+  --cyan-50: 236 254 255;
+  --cyan-200: 165 243 252;
+  --cyan-700: 14 116 144;
+
+  /* elevation — soft and low in light mode */
+  --shadow-card: 0 1px 2px 0 rgb(15 23 42 / 0.04), 0 1px 3px 0 rgb(15 23 42 / 0.04);
+  --shadow-pop: 0 4px 16px rgb(15 23 42 / 0.10);
+  --shadow-overlay: 0 12px 40px rgb(15 23 42 / 0.18);
+
+  /* chart helpers read by CSS (axis ticks) */
+  --chart-tick: 100 116 139;
 }
 
-html,
-body,
-#root {
-  height: 100%;
+.dark {
+  color-scheme: dark;
+
+  /* surfaces — never pure black: page → card → elevated */
+  --page: 10 10 11; /* #0a0a0b */
+  --surface: 20 20 23; /* #141417 */
+  --elevated: 28 28 32; /* #1c1c20 */
+  --code-bg: 16 16 19;
+  --code-fg: 226 232 240;
+  --code-muted: 148 163 184;
+
+  /* ink scale inverts: low shades = subtle fills, high shades = bright text.
+     200/300 are premultiplied border/fill grays (≈ white at 10–16%). */
+  --ink-900: 250 250 250; /* primary text  #fafafa */
+  --ink-800: 232 232 236;
+  --ink-700: 212 212 218;
+  --ink-600: 188 188 197;
+  --ink-500: 166 166 176; /* secondary text — ≥7:1 on surface */
+  --ink-400: 143 143 153; /* tertiary — ≥4.9:1 on surface */
+  --ink-300: 82 82 91;
+  --ink-200: 42 42 47; /* borders / stronger fills */
+  --ink-100: 34 34 39;
+  --ink-50: 26 26 30;
+
+  /* brand: chip/soft uses premultiplied tints; 300/700 go bright because they
+     are used as TEXT on dark; solid buttons set their own colors (see .btn) */
+  --brand-700: 103 232 249; /* chip text #67e8f9 */
+  --brand-600: 8 145 178;
+  --brand-500: 34 211 238;
+  --brand-400: 103 232 249;
+  --brand-300: 103 232 249;
+  --brand-50: 24 44 49; /* chip/active-nav bg #182c31 */
+
+  --accent: 129 140 248; /* indigo-400 */
+  --accent-fg: 15 15 20;
+
+  /* semantic scales — soft shades are premultiplied tints over the dark
+     surface; mid/700 shades brighten so chip text passes AA on the tints. */
+  --emerald-50: 19 46 40; /* #132e28 */
+  --emerald-100: 22 66 53;
+  --emerald-200: 25 60 48; /* border tint */
+  --emerald-300: 110 231 183;
+  --emerald-400: 52 211 153;
+  --emerald-500: 52 211 153;
+  --emerald-600: 110 231 183;
+  --emerald-700: 110 231 183; /* chip text #6ee7b7 */
+  --emerald-800: 167 243 208; /* banner body text */
+  --emerald-900: 209 250 229;
+
+  --amber-50: 54 41 22; /* #362916 */
+  --amber-100: 70 54 26;
+  --amber-200: 78 52 20; /* border tint */
+  --amber-500: 251 191 36;
+  --amber-600: 252 211 77;
+  --amber-700: 252 211 77; /* chip text #fcd34d */
+  --amber-800: 253 230 138; /* banner strong text */
+
+  --red-50: 48 28 30; /* #301c1e */
+  --red-100: 66 34 37;
+  --red-200: 72 40 43; /* border tint */
+  --red-400: 248 113 113;
+  --red-500: 248 113 113;
+  --red-600: 252 165 165;
+  --red-700: 252 165 165; /* chip text #fca5a5 */
+  --red-800: 254 202 202;
+
+  --sky-50: 19 40 52; /* #132834 */
+  --sky-100: 24 60 78;
+  --sky-200: 28 66 86; /* border tint */
+  --sky-400: 56 189 248;
+  --sky-500: 56 189 248;
+  --sky-600: 125 211 252;
+  --sky-700: 125 211 252; /* chip text #7dd3fc */
+  --sky-800: 186 230 253; /* banner body text */
+
+  --purple-50: 30 26 48; /* #1e1a30 */
+  --purple-700: 196 181 253; /* #c4b5fd */
+
+  --violet-50: 41 33 78; /* #29214e premultiplied tint */
+  --violet-700: 196 181 253; /* #c4b5fd */
+
+  --orange-50: 49 36 26; /* #31241a */
+  --orange-700: 253 186 116; /* #fdba74 */
+
+  --slate-200: 51 51 60;
+  --slate-400: 143 143 153;
+
+  --cyan-50: 23 44 51;
+  --cyan-200: 26 60 70;
+  --cyan-700: 103 232 249;
+
+  /* elevation — borders and surface steps carry depth; shadows nearly off */
+  --shadow-card: 0 0 0 1px rgb(255 255 255 / 0.04);
+  --shadow-pop: 0 8px 24px rgb(0 0 0 / 0.45);
+  --shadow-overlay: 0 16px 48px rgb(0 0 0 / 0.55);
+
+  --chart-tick: 155 155 168;
 }
 
-body {
-  margin: 0;
-  background-color: #f1f5f9;
-  color: #0f172a;
-  font-family: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
-  -webkit-font-smoothing: antialiased;
-  text-rendering: optimizeLegibility;
+/* ============================================================================
+   Base
+   ========================================================================= */
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    margin: 0;
+    background-color: rgb(var(--page));
+    color: rgb(var(--ink-900));
+    font-family: "Inter Variable", Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    transition: background-color 200ms ease, color 200ms ease;
+  }
+
+  ::selection {
+    background: rgb(var(--brand-500) / 0.25);
+  }
+
+  /* Visible keyboard focus everywhere, without mouse-click noise. */
+  :focus-visible {
+    outline: 2px solid rgb(var(--brand-500));
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  /* Slim, theme-aware scrollbars */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgb(var(--ink-300)) transparent;
+  }
+  *::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  *::-webkit-scrollbar-thumb {
+    background: rgb(var(--ink-300));
+    border-radius: 8px;
+  }
+  *::-webkit-scrollbar-thumb:hover {
+    background: rgb(var(--ink-400));
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
 }
 
-/* Thin, unobtrusive scrollbars */
-* {
-  scrollbar-width: thin;
-  scrollbar-color: #cbd5e1 transparent;
-}
-*::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
-*::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
-  border-radius: 8px;
-}
+/* ============================================================================
+   Components
+   ========================================================================= */
 
 @layer components {
   .card {
-    @apply bg-white rounded-xl border border-ink-200/70 shadow-card;
+    @apply rounded-xl border bg-surface shadow-card;
+    border-color: rgb(var(--ink-900) / 0.08);
+    transition: box-shadow 150ms ease, border-color 150ms ease;
+  }
+  .dark .card {
+    border-color: rgb(255 255 255 / 0.09);
   }
   .card-pad {
     @apply p-5;
   }
+
   .section-title {
     @apply text-sm font-semibold uppercase tracking-wide text-ink-500;
   }
@@ -49,21 +290,198 @@ body {
     @apply text-3xl font-bold tabular-nums text-ink-900;
   }
   .kpi-label {
-    @apply text-xs font-medium text-ink-500 uppercase tracking-wide;
+    @apply text-xs font-medium uppercase tracking-wide text-ink-500;
   }
+
   .chip {
     @apply inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium;
   }
+
+  /* ---- buttons -------------------------------------------------------------
+     Sizes: .btn (h-9, page-level) · .btn-sm (h-8, in-card toolbars).
+     Variants: -primary (solid brand) · -secondary (bordered surface) · -ghost.
+     -------------------------------------------------------------------------- */
+  .btn {
+    @apply inline-flex select-none items-center justify-center gap-1.5 whitespace-nowrap rounded-lg font-medium outline-offset-2 transition-[background-color,border-color,color,box-shadow,transform] duration-150 active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50;
+  }
+  .btn {
+    height: 2.25rem;
+    padding: 0 0.875rem;
+    font-size: 0.8125rem;
+  }
+  .btn-sm {
+    height: 2rem;
+    padding: 0 0.75rem;
+    font-size: 0.75rem;
+  }
+  .btn-primary {
+    background-color: #0e7490; /* cyan-700 — 4.9:1 with the white label */
+    @apply font-semibold text-white;
+    transition: background-color 150ms ease, transform 150ms ease;
+  }
+  .btn-primary:hover {
+    background-color: #0891b2;
+  }
+  .dark .btn-primary {
+    background-color: #0e7490;
+  }
+  .dark .btn-primary:hover {
+    background-color: #0a86a6;
+  }
+  .btn-secondary {
+    @apply border bg-surface font-medium text-ink-700 hover:bg-ink-50;
+    border-color: rgb(var(--ink-900) / 0.12);
+  }
+  .dark .btn-secondary {
+    @apply text-ink-300 hover:bg-ink-100;
+    border-color: rgb(255 255 255 / 0.12);
+  }
+  .btn-ghost {
+    @apply font-medium text-ink-600 hover:bg-ink-100 hover:text-ink-900;
+  }
+  .dark .btn-ghost {
+    @apply text-ink-400 hover:bg-ink-100 hover:text-ink-100;
+  }
+
+  /* ---- segmented control (chart ranges, heatmap modes, tabs) -------------- */
+  .seg {
+    @apply inline-flex rounded-lg border p-0.5;
+    border-color: rgb(var(--ink-900) / 0.1);
+    background: rgb(var(--ink-900) / 0.03);
+  }
+  .dark .seg {
+    border-color: rgb(255 255 255 / 0.1);
+    background: rgb(255 255 255 / 0.04);
+  }
+  .seg-item {
+    @apply rounded-md px-2.5 py-1 text-xs font-medium text-ink-500 transition-colors duration-150 hover:text-ink-800;
+  }
+  .dark .seg-item {
+    @apply hover:text-ink-200;
+  }
+  .seg-item-active {
+    @apply bg-surface text-ink-900 shadow-card;
+    box-shadow: inset 0 0 0 1px rgb(var(--ink-900) / 0.08), var(--shadow-card);
+  }
+  .dark .seg-item-active {
+    @apply bg-elevated text-ink-100;
+    box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.12), var(--shadow-card);
+  }
+
+  /* ---- tooltip token: one consistent style app-wide ------------------------
+     Solid, near-opaque dark glass in BOTH themes — readable over any heatmap
+     cell or chart color. z-index 60 sits above every chart layer and header.
+     -------------------------------------------------------------------------- */
+  .tt {
+    z-index: 60;
+    pointer-events: none;
+    border-radius: 8px;
+    padding: 8px 12px;
+    background: rgba(17, 24, 39, 0.95);
+    color: #f8fafc;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    font-size: 12px;
+    line-height: 1.45;
+  }
+  .dark .tt {
+    background: rgba(28, 28, 34, 0.96);
+    border-color: rgba(255, 255, 255, 0.12);
+  }
+  .tt-label {
+    @apply text-xs font-semibold text-white;
+  }
+  .tt-key {
+    color: rgba(248, 250, 252, 0.72);
+  }
+  .tt-val {
+    @apply font-semibold tabular-nums text-white;
+  }
+
+  /* ---- skeletons ----------------------------------------------------------- */
+  .skeleton {
+    position: relative;
+    overflow: hidden;
+    border-radius: 6px;
+    background: rgb(var(--ink-900) / 0.07);
+  }
+  .dark .skeleton {
+    background: rgb(255 255 255 / 0.07);
+  }
+  .skeleton::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    transform: translateX(-100%);
+    background: linear-gradient(
+      90deg,
+      transparent,
+      rgb(var(--ink-900) / 0.05),
+      transparent
+    );
+    animation: skeleton-shimmer 1.6s ease-in-out infinite;
+  }
+  .dark .skeleton::after {
+    background: linear-gradient(
+      90deg,
+      transparent,
+      rgb(255 255 255 / 0.06),
+      transparent
+    );
+  }
 }
 
-/* Recharts cursor + tooltip polish */
+@keyframes skeleton-shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+@keyframes tt-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* Page transition — subtle 160ms ease-out fade/rise on route change. */
+@keyframes page-enter {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.page-enter {
+  animation: page-enter 160ms ease-out;
+}
+
+/* ============================================================================
+   Recharts polish (ticks + default tooltip follow the theme via tokens)
+   ========================================================================= */
+
 .recharts-cartesian-axis-tick text {
-  fill: #94a3b8;
+  fill: rgb(var(--chart-tick));
   font-size: 11px;
 }
 .recharts-default-tooltip {
-  border-radius: 10px !important;
-  border: 1px solid #e2e8f0 !important;
-  box-shadow: 0 6px 16px rgba(15, 23, 42, 0.08) !important;
+  border-radius: 8px !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  background: rgba(17, 24, 39, 0.95) !important;
+  color: #f8fafc !important;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2) !important;
   font-size: 12px;
+}
+.dark .recharts-default-tooltip {
+  background: rgba(28, 28, 34, 0.96) !important;
+}
+.recharts-tooltip-wrapper {
+  outline: none !important;
 }

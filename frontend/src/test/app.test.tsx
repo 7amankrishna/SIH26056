@@ -6,6 +6,7 @@ import { render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import App from "../App";
+import { ThemeProvider } from "../hooks/useTheme";
 
 function queryClient() {
   return new QueryClient({
@@ -85,13 +86,56 @@ describe("App render smoke test", () => {
   it("renders the Overview dashboard without throwing", async () => {
     render(
       <QueryClientProvider client={queryClient()}>
-        <MemoryRouter initialEntries={["/"]}>
-          <App />
-        </MemoryRouter>
+        <ThemeProvider>
+          <MemoryRouter initialEntries={["/"]}>
+            <App />
+          </MemoryRouter>
+        </ThemeProvider>
       </QueryClientProvider>,
     );
     expect(await screen.findByRole("heading", { name: "Overview" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Airfare Price Index" })).toBeInTheDocument();
     expect(screen.getByText("DEMO DATA")).toBeInTheDocument();
+  });
+
+  // Every route must mount cleanly with sparse API responses — catches runtime
+  // regressions (undefined fields, broken hooks) that TypeScript cannot.
+  it.each([
+    ["/", "Overview"],
+    ["/index", "Airfare Index · APIx"],
+    ["/routes", "Routes"],
+    ["/airlines", "Airline Price Intelligence"],
+    ["/lead-time", "Lead-Time Elasticity"],
+    ["/quality", "Data Quality"],
+    ["/collection", "Collection Monitor"],
+    ["/live-feed", "Collection engine"],
+    ["/methodology", "Index Methodology"],
+    ["/api", "API / Data Access"],
+  ])("renders %s without throwing", async (path, heading) => {
+    const { unmount } = render(
+      <QueryClientProvider client={queryClient()}>
+        <ThemeProvider>
+          <MemoryRouter initialEntries={[path]}>
+            <App />
+          </MemoryRouter>
+        </ThemeProvider>
+      </QueryClientProvider>,
+    );
+    expect(await screen.findByRole("heading", { name: heading }, { timeout: 2000 })).toBeInTheDocument();
+    unmount();
+  });
+
+  it("keeps the document title in sync with the route", async () => {
+    render(
+      <QueryClientProvider client={queryClient()}>
+        <ThemeProvider>
+          <MemoryRouter initialEntries={["/routes"]}>
+            <App />
+          </MemoryRouter>
+        </ThemeProvider>
+      </QueryClientProvider>,
+    );
+    await screen.findByRole("heading", { name: "Routes" });
+    expect(document.title).toBe("Routes · APIx");
   });
 });

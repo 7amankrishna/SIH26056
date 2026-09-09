@@ -6,6 +6,8 @@ import { ChartCard } from "../components/ChartCard";
 import { StatusPill } from "../components/badges";
 import { DataBoundary } from "../components/DataState";
 import { useQuality, useQualityRejected } from "../hooks/useApi";
+import { useChartTheme } from "../hooks/useChartTheme";
+import { usePageTitle } from "../hooks/usePageTitle";
 import type { Quality } from "../lib/types";
 
 const DIMENSIONS: { key: keyof Quality["breakdown"]; label: string }[] = [
@@ -19,6 +21,8 @@ const DIMENSIONS: { key: keyof Quality["breakdown"]; label: string }[] = [
 
 export default function DataQuality() {
   const { data, isLoading, isError, error } = useQuality();
+  const t = useChartTheme();
+  usePageTitle("Data Quality");
   const [filter, setFilter] = useState<string>("all");
 
   return (
@@ -36,13 +40,13 @@ export default function DataQuality() {
               <div className="text-center">
                 <div className="relative mx-auto flex h-32 w-32 items-center justify-center">
                   <svg className="h-32 w-32 -rotate-90" viewBox="0 0 120 120">
-                    <circle cx="60" cy="60" r="52" fill="none" stroke="#eef2f7" strokeWidth="12" />
+                    <circle cx="60" cy="60" r="52" fill="none" stroke={t.grid} strokeWidth="12" />
                     <circle
                       cx="60"
                       cy="60"
                       r="52"
                       fill="none"
-                      stroke="#0891b2"
+                      stroke={t.brand}
                       strokeWidth="12"
                       strokeLinecap="round"
                       strokeDasharray={`${(data.weighted_score / 100) * 326.7} 326.7`}
@@ -50,11 +54,11 @@ export default function DataQuality() {
                   </svg>
                   <div className="absolute">
                     <div className="text-3xl font-bold tabular-nums text-ink-900">{data.score.toFixed(1)}</div>
-                    <div className="text-[11px] text-ink-400">/ 100</div>
+                    <div className="text-[11px] text-ink-500">/ 100</div>
                   </div>
                 </div>
                 <p className="mt-3 text-sm font-semibold text-ink-700">Overall Quality Score</p>
-                <p className="text-xs text-ink-400">{data.included.toLocaleString("en-IN")} of {data.total.toLocaleString("en-IN")} observations eligible for the index</p>
+                <p className="text-xs text-ink-500">{data.included.toLocaleString("en-IN")} of {data.total.toLocaleString("en-IN")} observations eligible for the index</p>
               </div>
             )}
           </DataBoundary>
@@ -113,23 +117,24 @@ function QualityDrilldown({ filter, setFilter }: { filter: string; setFilter: (s
   return (
     <div>
       <div className="mb-4 flex flex-wrap gap-2">
-        {filters.map((f) => (
-          <button
-            key={f.key}
-            onClick={() => setFilter(f.key)}
-            className={`rounded-lg px-3 py-1.5 text-xs font-medium ${
-              filter === f.key ? "bg-brand-600 text-white" : "bg-ink-100 text-ink-600 hover:bg-ink-200"
-            }`}
-          >
-            {f.label}
-          </button>
-        ))}
+        <div className="seg flex-wrap" role="group" aria-label="Filter by status">
+          {filters.map((f) => (
+            <button
+              key={f.key}
+              onClick={() => setFilter(f.key)}
+              aria-pressed={filter === f.key}
+              className={`seg-item ${filter === f.key ? "seg-item-active" : ""}`}
+            >
+              {f.label}
+            </button>
+          ))}
+        </div>
       </div>
-      <DataBoundary isLoading={isLoading} isError={isError} error={error} isEmpty={!rows.length} emptyTitle="No rejected observations in this category.">
+      <DataBoundary isLoading={isLoading} isError={isError} error={error} isEmpty={!rows.length} emptyTitle="No rejected observations in this category." variant="table">
         <div className="max-h-[420px] overflow-auto rounded-lg border border-ink-100">
           <table className="w-full text-sm">
-            <thead className="sticky top-0 bg-white">
-              <tr className="border-b border-ink-100 text-left text-[11px] uppercase tracking-wide text-ink-400">
+            <thead className="sticky top-0 bg-surface">
+              <tr className="border-b border-ink-100 text-left text-[11px] uppercase tracking-wide text-ink-500">
                 <th className="px-4 py-2.5 font-medium">Obs ID</th>
                 <th className="px-3 py-2.5 font-medium">Source</th>
                 <th className="px-3 py-2.5 font-medium">Route</th>
@@ -142,7 +147,7 @@ function QualityDrilldown({ filter, setFilter }: { filter: string; setFilter: (s
                 <th className="px-3 py-2.5 font-medium">Reason</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-ink-50">
+            <tbody className="divide-y divide-ink-100/70">
               {rows.map((r) => (
                 <tr key={r.observation_id} className="hover:bg-ink-50">
                   <td className="px-4 py-2 font-mono text-xs text-ink-500">{r.observation_id}</td>
@@ -160,7 +165,7 @@ function QualityDrilldown({ filter, setFilter }: { filter: string; setFilter: (s
             </tbody>
           </table>
         </div>
-        <div className="mt-2 flex items-center gap-2 text-[11px] text-ink-400">
+        <div className="mt-2 flex items-center gap-2 text-[11px] text-ink-500">
           <ShieldAlert className="h-3.5 w-3.5" />
           Suspicious and rejected observations are preserved for audit and never silently deleted.
         </div>

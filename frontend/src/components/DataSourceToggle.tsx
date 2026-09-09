@@ -18,20 +18,7 @@ const OPTIONS: { id: DataMode; label: string; icon: typeof Sun; hint: string }[]
 ];
 
 export function DataSourceToggle({ withCollectButton = true }: { withCollectButton?: boolean }) {
-  const {
-    mode,
-    isLive,
-    busy,
-    collecting,
-    setMode,
-    collectNow,
-    counts,
-    note,
-    locked,
-    actionError,
-    storeAvailable,
-    storeNote,
-  } = useDataSource();
+  const { mode, isLive, busy, collecting, setMode, collectNow, counts, note, locked, actionError, storeAvailable, storeNote } = useDataSource();
 
   const onKey = useCallback(
     (e: React.KeyboardEvent) => {
@@ -63,7 +50,7 @@ export function DataSourceToggle({ withCollectButton = true }: { withCollectButt
           onClick={collectNow}
           disabled={collecting || busy}
           title="Run one collection sweep now (POST /api/collect/sweep)"
-          className="hidden items-center gap-1.5 rounded-lg border border-ink-200 bg-white px-2.5 py-1.5 text-xs font-medium text-ink-600 transition-colors hover:bg-ink-50 disabled:opacity-50 sm:inline-flex"
+          className="btn btn-sm btn-secondary hidden sm:inline-flex"
         >
           {collecting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
           {collecting ? "Collecting…" : "Collect now"}
@@ -88,9 +75,10 @@ export function DataSourceToggle({ withCollectButton = true }: { withCollectButt
       >
         {/* sliding knob */}
         <span
-          className={`absolute top-0.5 h-[26px] w-[86px] rounded-md bg-white shadow-sm ring-1 ring-ink-200 transition-transform duration-200 ${
+          className={`absolute top-0.5 h-[26px] w-[86px] rounded-md bg-surface shadow-card ring-1 transition-transform duration-200 ${
             mode === "live" ? "translate-x-[86px]" : "translate-x-0"
           }`}
+          style={{ "--tw-ring-color": "rgb(var(--ink-900) / 0.1)" } as React.CSSProperties}
           aria-hidden
         />
         {OPTIONS.map((opt) => {
@@ -100,10 +88,10 @@ export function DataSourceToggle({ withCollectButton = true }: { withCollectButt
               key={opt.id}
               title={opt.hint}
               className={`relative z-10 flex h-[26px] w-[86px] items-center justify-center gap-1.5 text-[11px] font-semibold transition-colors ${
-                active ? "text-ink-900" : "text-ink-400 group-hover:text-ink-600"
+                active ? "text-ink-900" : "text-ink-500 group-hover:text-ink-600"
               }`}
             >
-              <opt.icon className={`h-3 w-3 ${opt.id === "live" && active ? "text-emerald-600" : ""}`} />
+              <opt.icon className={`h-3 w-3 ${opt.id === "live" && active ? "text-emerald-700" : ""}`} />
               {opt.label}
             </span>
           );

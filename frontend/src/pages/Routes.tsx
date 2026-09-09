@@ -20,9 +20,12 @@ import { FilterBar } from "../components/FilterBar";
 import { ChartTooltip } from "../components/ChartCard";
 import { useFilters } from "../hooks/useFilters";
 import { useRouteDetail, useRoutes } from "../hooks/useApi";
+import { usePageTitle } from "../hooks/usePageTitle";
+import { useChartTheme } from "../hooks/useChartTheme";
 import { formatINR, shortDate } from "../lib/format";
 
 export default function Routes() {
+  usePageTitle("Routes");
   const { route } = useFilters();
   return (
     <div className="space-y-5">
@@ -39,7 +42,7 @@ export default function Routes() {
         <div className="flex items-center justify-between border-b border-ink-100 px-5 py-3.5">
           <div>
             <h3 className="text-sm font-semibold text-ink-800">India Airfare Route Heatmap</h3>
-            <p className="mt-0.5 text-xs text-ink-400">Click a cell to drill into that route.</p>
+            <p className="mt-0.5 text-xs text-ink-500">Click a cell to drill into that route.</p>
           </div>
         </div>
         <div className="p-5">
@@ -54,11 +57,12 @@ export default function Routes() {
 
 function RouteDetailPanel({ route }: { route: string }) {
   const { data, isLoading, isError, error } = useRouteDetail(route);
+  const t = useChartTheme();
   const series = useMemo(() => (data?.series ?? []), [data]);
 
   return (
     <ChartCard title={`${data?.origin_city ?? ""} → ${data?.destination_city ?? ""}`} subtitle={`Route index · distance ${data?.distance_km ?? "—"} km`}>
-      <DataBoundary isLoading={isLoading} isError={isError} error={error} isEmpty={!series.length} emptyTitle={`No observations available for ${route}.`}>
+      <DataBoundary isLoading={isLoading} isError={isError} error={error} isEmpty={!series.length} emptyTitle={`No observations available for ${route}.`} variant="chart">
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
           <Meta label="Current fare" value={formatINR(data?.meta?.current_fare)} />
           <Meta label="Route index" value={data?.meta?.route_index?.toFixed(1)} />
@@ -70,15 +74,15 @@ function RouteDetailPanel({ route }: { route: string }) {
             <AreaChart data={series} margin={{ top: 6, right: 10, bottom: 0, left: -10 }}>
               <defs>
                 <linearGradient id="routeFill" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#6366f1" stopOpacity={0.32} />
-                  <stop offset="95%" stopColor="#6366f1" stopOpacity={0} />
+                  <stop offset="5%" stopColor={t.indigo} stopOpacity={0.3} />
+                  <stop offset="95%" stopColor={t.indigo} stopOpacity={0} />
                 </linearGradient>
               </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="#eef2f7" />
-              <XAxis dataKey="date" tickFormatter={shortDate} tick={{ fontSize: 11 }} axisLine={false} tickLine={false} minTickGap={30} />
-              <YAxis tick={{ fontSize: 11 }} axisLine={false} tickLine={false} width={46} domain={["auto", "auto"]} />
+              <CartesianGrid strokeDasharray="3 3" stroke={t.grid} />
+              <XAxis dataKey="date" tickFormatter={shortDate} tick={{ fontSize: 11, fill: t.tick }} axisLine={false} tickLine={false} minTickGap={30} />
+              <YAxis tick={{ fontSize: 11, fill: t.tick }} axisLine={false} tickLine={false} width={46} domain={["auto", "auto"]} />
               <Tooltip content={<ChartTooltip />} />
-              <Area type="monotone" dataKey="route_index" name="Route index" stroke="#6366f1" strokeWidth={2} fill="url(#routeFill)" />
+              <Area type="monotone" dataKey="route_index" name="Route index" stroke={t.indigo} strokeWidth={2} fill="url(#routeFill)" animationDuration={400} />
             </AreaChart>
           </ResponsiveContainer>
         </div>
@@ -87,7 +91,7 @@ function RouteDetailPanel({ route }: { route: string }) {
             <div key={a.airline} className="rounded-lg border border-ink-100 p-3">
               <div className="text-xs font-semibold text-ink-700">{a.name}</div>
               <div className="mt-1 text-sm font-bold tabular-nums text-ink-900">{formatINR(a.avg_fare)}</div>
-              <div className="text-[11px] text-ink-400">{a.observations} observations · median {formatINR(a.median_fare)}</div>
+              <div className="text-[11px] text-ink-500">{a.observations} observations · median {formatINR(a.median_fare)}</div>
             </div>
           ))}
         </div>
@@ -99,7 +103,7 @@ function RouteDetailPanel({ route }: { route: string }) {
 function Meta({ label, value }: { label: string; value: string | undefined | number }) {
   return (
     <div className="rounded-lg border border-ink-100 p-3">
-      <div className="text-[11px] uppercase tracking-wide text-ink-400">{label}</div>
+      <div className="text-[11px] uppercase tracking-wide text-ink-500">{label}</div>
       <div className="mt-1 text-base font-bold tabular-nums text-ink-900">{value ?? "—"}</div>
     </div>
   );
@@ -110,11 +114,11 @@ function RouteMovementTable() {
   const navigate = useNavigate();
   return (
     <ChartCard title="Route Movement" subtitle="All routes ordered by 7-day change" pad={false}>
-      <DataBoundary isLoading={isLoading} isError={isError} error={error} isEmpty={!data?.routes.length} emptyTitle="No route data">
+      <DataBoundary isLoading={isLoading} isError={isError} error={error} isEmpty={!data?.routes.length} emptyTitle="No route data" variant="table">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-ink-100 text-left text-[11px] uppercase tracking-wide text-ink-400">
+              <tr className="border-b border-ink-100 text-left text-[11px] uppercase tracking-wide text-ink-500">
                 <th className="px-5 py-2.5 font-medium">Route</th>
                 <th className="px-3 py-2.5 font-medium">Fare</th>
                 <th className="px-3 py-2.5 font-medium">Index</th>
@@ -125,7 +129,7 @@ function RouteMovementTable() {
                 <th className="px-3 py-2.5 font-medium">Trend</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-ink-50">
+            <tbody className="divide-y divide-ink-100/70">
               {(data?.routes ?? []).map((r) => (
                 <tr key={r.route} onClick={() => navigate(`?route=${r.route}`)} className="cursor-pointer hover:bg-ink-50">
                   <td className="px-5 py-2.5 font-medium text-ink-800">{r.origin_city} → {r.destination_city}</td>

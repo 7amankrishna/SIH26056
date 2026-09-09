@@ -23,11 +23,11 @@ export function DeltaBadge({
   const cls = up
     ? "bg-red-50 text-red-600"
     : down
-      ? "bg-emerald-50 text-emerald-600"
+      ? "bg-emerald-50 text-emerald-700"
       : "bg-ink-100 text-ink-500";
   return (
     <span className={`chip ${cls} ${className}`}>
-      <Icon className="h-3 -w-3" />
+      <Icon className="h-3 w-3" />
       {value > 0 ? "+" : ""}
       {value.toFixed(1)}
       {suffix}

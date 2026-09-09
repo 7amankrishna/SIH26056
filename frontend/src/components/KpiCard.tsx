@@ -1,6 +1,7 @@
 // Compact, consistent KPI / stat card used across the dashboard.
 
 import type { ReactNode } from "react";
+import { Skeleton } from "./Skeleton";
 
 export function KpiCard({
   label,
@@ -20,7 +21,7 @@ export function KpiCard({
   loading?: boolean;
 }) {
   return (
-    <div className="card relative overflow-hidden p-4">
+    <div className="card relative overflow-hidden p-4 transition-shadow duration-200 hover:shadow-pop">
       {accent && (
         <span
           className="absolute inset-x-0 top-0 h-1"
@@ -31,13 +32,20 @@ export function KpiCard({
         <div className="min-w-0">
           <p className="kpi-label">{label}</p>
           {loading ? (
-            <div className="mt-2 h-8 w-24 animate-pulse rounded bg-ink-100" />
+            <Skeleton className="mt-2 h-8 w-24" />
           ) : (
             <p className="kpi-value mt-1 truncate">{value}</p>
           )}
-          {sub && <div className="mt-1 text-xs text-ink-400">{sub}</div>}
+          {sub && <div className="mt-1 text-xs text-ink-500">{sub}</div>}
         </div>
-        {icon && <div className="shrink-0 text-ink-300">{icon}</div>}
+        {icon && (
+          <div
+            className="shrink-0 rounded-lg p-1.5 text-ink-500"
+            style={{ background: "rgb(var(--ink-900) / 0.05)" }}
+          >
+            {icon}
+          </div>
+        )}
       </div>
       {delta && <div className="mt-2">{delta}</div>}
     </div>
