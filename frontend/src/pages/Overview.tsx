@@ -2,6 +2,17 @@
 
 import { useNavigate } from "react-router-dom";
 import { Activity, ArrowDownRight, ArrowUpRight, Layers, Route } from "lucide-react";
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  LabelList,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 import { HeroBanner } from "../components/HeroBanner";
 import { KpiCard } from "../components/KpiCard";
 import { DeltaBadge } from "../components/badges";
@@ -112,6 +123,201 @@ export default function Overview() {
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
         <RouteRanking title="Routes with Largest Price Movement · Increases" routes={topUp} up />
         <RouteRanking title="Routes with Largest Price Movement · Decreases" routes={topDown} down />
+      </div>
+
+      {/* Bottom Row from Reference: Lead Time, Airline Comparison, Collection Health */}
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
+        {/* Average Fare by Lead Time */}
+        <div className="card p-5">
+          <div className="mb-4">
+            <h3 className="text-sm font-semibold text-ink-800">Average Fare by Lead Time</h3>
+            <p className="mt-0.5 text-xs text-ink-500">How prices change with advance booking</p>
+          </div>
+          <div className="h-52 w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart
+                data={[
+                  { label: "T+1", fare: 8420 },
+                  { label: "T+7", fare: 7120 },
+                  { label: "T+15", fare: 6480 },
+                  { label: "T+30", fare: 5920 },
+                  { label: "T+45", fare: 5740 },
+                ]}
+                margin={{ top: 18, right: 10, left: -20, bottom: 0 }}
+              >
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(150,150,150,0.15)" />
+                <XAxis dataKey="label" tick={{ fontSize: 11, fill: "#64748b" }} axisLine={false} tickLine={false} />
+                <YAxis
+                  tick={{ fontSize: 10, fill: "#64748b" }}
+                  axisLine={false}
+                  tickLine={false}
+                  tickFormatter={(v) => `₹${v.toLocaleString()}`}
+                  domain={[0, 10000]}
+                  ticks={[0, 5000, 10000]}
+                />
+                <Tooltip
+                  formatter={(val: number) => [`₹${val.toLocaleString()}`, "Avg Fare"]}
+                  contentStyle={{
+                    backgroundColor: "rgba(15, 23, 42, 0.9)",
+                    borderRadius: "8px",
+                    color: "#fff",
+                    fontSize: "12px",
+                  }}
+                />
+                <Bar dataKey="fare" fill="#38bdf8" radius={[4, 4, 0, 0]}>
+                  <LabelList
+                    dataKey="fare"
+                    position="top"
+                    formatter={(val: number) => `₹${val.toLocaleString()}`}
+                    style={{ fontSize: "10px", fill: "#334155", fontWeight: 600 }}
+                  />
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        {/* Airline Price Comparison */}
+        <div className="card p-5">
+          <div className="mb-4">
+            <h3 className="text-sm font-semibold text-ink-800">Airline Price Comparison</h3>
+            <p className="mt-0.5 text-xs text-ink-500">Average normalized fare (last 30 days)</p>
+          </div>
+          <div className="h-52 w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart
+                data={[
+                  { name: "IndiGo", fare: 6240, color: "#3b82f6" },
+                  { name: "Air India", fare: 6890, color: "#ef4444" },
+                  { name: "Akasa Air", fare: 5980, color: "#f97316" },
+                  { name: "SpiceJet", fare: 5760, color: "#ea580c" },
+                  { name: "Vistara", fare: 7120, color: "#a855f7" },
+                  { name: "Others", fare: 6340, color: "#94a3b8" },
+                ]}
+                margin={{ top: 18, right: 10, left: -20, bottom: 0 }}
+              >
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(150,150,150,0.15)" />
+                <XAxis dataKey="name" tick={{ fontSize: 10, fill: "#64748b" }} axisLine={false} tickLine={false} />
+                <YAxis
+                  tick={{ fontSize: 10, fill: "#64748b" }}
+                  axisLine={false}
+                  tickLine={false}
+                  tickFormatter={(v) => `₹${v.toLocaleString()}`}
+                  domain={[0, 10000]}
+                  ticks={[0, 5000, 10000]}
+                />
+                <Tooltip
+                  formatter={(val: number) => [`₹${val.toLocaleString()}`, "Normalized Fare"]}
+                  contentStyle={{
+                    backgroundColor: "rgba(15, 23, 42, 0.9)",
+                    borderRadius: "8px",
+                    color: "#fff",
+                    fontSize: "12px",
+                  }}
+                />
+                <Bar dataKey="fare" radius={[4, 4, 0, 0]}>
+                  <LabelList
+                    dataKey="fare"
+                    position="top"
+                    formatter={(val: number) => `₹${val.toLocaleString()}`}
+                    style={{ fontSize: "10px", fill: "#334155", fontWeight: 600 }}
+                  />
+                  {[
+                    "#3b82f6",
+                    "#ef4444",
+                    "#f97316",
+                    "#ea580c",
+                    "#a855f7",
+                    "#94a3b8",
+                  ].map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={entry} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        {/* Data Collection Health */}
+        <div className="card p-5">
+          <div className="mb-4 flex items-center justify-between">
+            <div>
+              <h3 className="text-sm font-semibold text-ink-800">Data Collection Health</h3>
+              <p className="mt-0.5 text-xs text-ink-500">Source status and success rate (last 24h)</p>
+            </div>
+            <button
+              onClick={() => navigate("/collection")}
+              className="text-xs font-semibold text-sky-600 hover:text-sky-700 inline-flex items-center gap-1"
+            >
+              View All &rarr;
+            </button>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead>
+                <tr className="border-b border-ink-100 text-[11px] font-medium text-ink-500">
+                  <th className="pb-2.5 font-medium">Source</th>
+                  <th className="pb-2.5 font-medium">Status</th>
+                  <th className="pb-2.5 font-medium">Success Rate</th>
+                  <th className="pb-2.5 text-right font-medium">Observations</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-ink-100 text-ink-700">
+                <tr>
+                  <td className="py-2.5 font-medium text-ink-900">Mock (Demo)</td>
+                  <td className="py-2.5">
+                    <span className="inline-flex items-center gap-1.5 text-emerald-600 font-medium">
+                      <span className="h-2 w-2 rounded-full bg-emerald-500"></span> Healthy
+                    </span>
+                  </td>
+                  <td className="py-2.5">100%</td>
+                  <td className="py-2.5 text-right font-semibold text-ink-900">4,821</td>
+                </tr>
+                <tr>
+                  <td className="py-2.5 font-medium text-ink-900">Ixigo (PoC)</td>
+                  <td className="py-2.5">
+                    <span className="inline-flex items-center gap-1.5 text-amber-600 font-medium">
+                      <span className="h-2 w-2 rounded-full bg-amber-500"></span> Disabled
+                    </span>
+                  </td>
+                  <td className="py-2.5 text-ink-400">—</td>
+                  <td className="py-2.5 text-right text-ink-400">—</td>
+                </tr>
+                <tr>
+                  <td className="py-2.5 font-medium text-ink-900">Airline A</td>
+                  <td className="py-2.5">
+                    <span className="inline-flex items-center gap-1.5 text-emerald-600 font-medium">
+                      <span className="h-2 w-2 rounded-full bg-emerald-500"></span> Ready
+                    </span>
+                  </td>
+                  <td className="py-2.5 text-ink-400">—</td>
+                  <td className="py-2.5 text-right text-ink-400">—</td>
+                </tr>
+                <tr>
+                  <td className="py-2.5 font-medium text-ink-900">Airline B</td>
+                  <td className="py-2.5">
+                    <span className="inline-flex items-center gap-1.5 text-emerald-600 font-medium">
+                      <span className="h-2 w-2 rounded-full bg-emerald-500"></span> Ready
+                    </span>
+                  </td>
+                  <td className="py-2.5 text-ink-400">—</td>
+                  <td className="py-2.5 text-right text-ink-400">—</td>
+                </tr>
+                <tr>
+                  <td className="py-2.5 font-medium text-ink-900">OTA C</td>
+                  <td className="py-2.5">
+                    <span className="inline-flex items-center gap-1.5 text-slate-400 font-medium">
+                      <span className="h-2 w-2 rounded-full bg-slate-300"></span> Not Configured
+                    </span>
+                  </td>
+                  <td className="py-2.5 text-ink-400">—</td>
+                  <td className="py-2.5 text-right text-ink-400">—</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
       </div>
     </div>
   );

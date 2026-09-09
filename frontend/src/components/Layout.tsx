@@ -43,25 +43,25 @@ const FLAT_NAV = NAV_ITEMS;
 
 function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   return (
-    <div className="flex min-h-full flex-col justify-between">
-      <div>
+    <div className="flex h-full flex-col justify-between overflow-hidden">
+      <div className="flex min-h-0 flex-col">
         {/* Brand */}
-        <div className="flex items-center gap-3 px-4 pb-5 pt-6">
-          <div className="brand-mark flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-white">
-            <Plane className="h-6 w-6" />
+        <div className="flex items-center gap-3 px-4 pb-3 pt-5 shrink-0">
+          <div className="brand-mark flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-white shadow-md">
+            <Plane className="h-5 w-5" />
           </div>
           <div className="min-w-0">
-            <div className="brand-wordmark text-xl font-extrabold tracking-tight">
+            <div className="brand-wordmark text-xl font-extrabold tracking-tight leading-tight">
               APIx
             </div>
-            <div className="text-[11px] leading-tight text-[#93a5c4]">
-              Real-Time Airfare Price Index · India
+            <div className="text-[11px] leading-tight text-[#93a5c4] truncate">
+              Real-Time Airfare Index · India
             </div>
           </div>
         </div>
 
         {/* Primary Navigation items */}
-        <nav className="space-y-1 px-3 pb-4" aria-label="Primary">
+        <nav className="flex-1 space-y-0.5 px-3 py-2 overflow-y-auto" aria-label="Primary">
           {NAV_ITEMS.map((item) => (
             <NavLink
               key={item.to}
@@ -73,33 +73,25 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
               }
             >
               <item.icon className="h-4 w-4 shrink-0" />
-              {item.label}
+              <span>{item.label}</span>
             </NavLink>
           ))}
         </nav>
       </div>
 
       {/* Government / statistical identity */}
-      <div className="px-4 pb-4 pt-4">
-        <div className="flex flex-col items-start gap-3.5">
+      <div className="border-t border-white/10 px-4 py-3 shrink-0 bg-black/15">
+        <div className="flex items-center gap-3">
           <img 
             src="https://upload.wikimedia.org/wikipedia/commons/5/55/Emblem_of_India.svg" 
             alt="Government of India"
-            className="h-11 w-auto opacity-70"
+            className="h-8 w-auto opacity-75 shrink-0"
             style={{ filter: "brightness(0) invert(1)" }}
           />
-          <div className="text-[10.5px] leading-relaxed text-[#93a5c4]">
-            <p>A prototype for</p>
-            <p>Ministry of Statistics and</p>
-            <p>Programme Implementation</p>
-            <p>(MoSPI)</p>
-          </div>
-          <div className="text-[10.5px] leading-relaxed text-[#93a5c4]">
-            <p>High-frequency airfare</p>
-            <p>intelligence for CPI augmentation</p>
-          </div>
-          <div className="text-[10px] text-[#7d8db1]">
-            v0.1.0 (SIH26056)
+          <div className="min-w-0 text-[10.5px] leading-snug text-[#93a5c4]">
+            <p className="font-semibold text-white/90">Ministry of Statistics (MoSPI)</p>
+            <p className="text-[9.5px] text-[#8598be]">CPI Augmentation Prototype</p>
+            <p className="text-[9px] text-[#6d7e9f]">v0.1.0 · SIH26056</p>
           </div>
         </div>
       </div>
@@ -153,8 +145,8 @@ export function Layout() {
         Skip to content
       </a>
 
-      {/* Desktop sidebar — stays fixed as you scroll through all sections of the dashboard */}
-      <aside className="sidebar-surface sticky top-0 z-20 hidden h-screen w-64 shrink-0 flex-col overflow-y-auto lg:flex">
+      {/* Desktop sidebar — sticky top-0 h-screen follows viewport naturally without blank gaps */}
+      <aside className="sidebar-surface sticky top-0 z-20 hidden h-screen w-64 shrink-0 flex-col lg:flex">
         <SidebarContent />
       </aside>
 
@@ -193,11 +185,11 @@ export function Layout() {
             >
               <Menu className="h-5 w-5" />
             </button>
-            <div className="min-w-0">
+            <div className="min-w-0 shrink-0">
               <p className="truncate text-base font-bold text-ink-900">
                 {current.label}
               </p>
-              <p className="hidden text-[11px] text-ink-500 sm:block">
+              <p className="hidden text-[11px] text-ink-500 xl:block">
                 High-frequency airfare intelligence for CPI augmentation
               </p>
             </div>
