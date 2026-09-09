@@ -18,7 +18,7 @@ import datetime as dt
 import hashlib
 import random
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Any, Optional
 
 from .config import settings
 
@@ -273,7 +273,8 @@ class Dataset:
     end_date: dt.date
     base_period_start: dt.date
     base_period_end: dt.date
-    #: 'demo' | 'live' — drives the badge and the disclaimer text.
+    #: 'demo' | 'live' | 'custom' — drives the badge and the disclaimer text.
+    #  'custom' = the user's own imported files (see app.custom_data).
     origin: str = "demo"
     #: every collection date that has data, ascending (live data can have gaps)
     dates: list[str] = field(default_factory=list)
@@ -282,10 +283,17 @@ class Dataset:
     route_day: dict[tuple[str, str], dict] = field(default_factory=dict)
     # date -> APIx level
     daily_apix: dict[str, float] = field(default_factory=dict)
+    # date -> how much of the basket actually reported that day
+    #         {"routes": int, "weight": float} — 1.0 means every route had data
+    daily_coverage: dict[str, dict] = field(default_factory=dict)
     # route -> list of (date, route_index) sorted by date
     daily_apix_by_route: dict[str, list[tuple[str, float]]] = field(default_factory=dict)
     # route -> base price + weight
     route_meta: dict[str, dict] = field(default_factory=dict)
+    #: provenance for imported datasets: one entry per file that fed this dataset
+    source_files: list[dict] = field(default_factory=list)
+    #: import notes/warnings (weight basis, skipped rows, new routes …)
+    import_notes: dict[str, Any] = field(default_factory=dict)
 
     # Derived caches
     _quality_breakdown: Optional[dict] = field(default=None, repr=False)
@@ -663,8 +671,14 @@ def _finalize_aggregates(
                 continue
             route_idx[route] = 100.0 * price / base_price[route]
         if route_idx:
-            api = sum(weights[r] * route_idx[r] for r in route_idx)
-            ds.daily_apix[d] = api
+            # A day on which only some routes reported must not be read as a
+            # price crash: the weighted sum over a partial basket is smaller by
+            # construction. Renormalise over the routes that did report, and
+            # record the coverage so the UI can say the index is thin that day.
+            covered = sum(weights[r] for r in route_idx)
+            if covered > 0:
+                ds.daily_apix[d] = sum(weights[r] * route_idx[r] for r in route_idx) / covered
+                ds.daily_coverage[d] = {"routes": len(route_idx), "weight": round(covered, 4)}
             # normalised route index (for plotting) — relative to its own base
             for r, idx in route_idx.items():
                 route_index_by_route[r].append((d, round(idx, 4)))
@@ -703,11 +717,17 @@ _live_signature: Optional[tuple] = None
 def get_dataset() -> Dataset:
     """Return the active dataset for the current data-source mode.
 
-    ``demo`` mode serves the deterministic synthetic store. ``live`` mode serves
-    whatever the collection engine has actually stored — and rebuilds it only
-    when the stored data changed (each sweep bumps the signature). If live mode
-    has no data yet we fall back to demo and say so, rather than rendering an
-    empty dashboard with no explanation.
+    Precedence, highest first:
+
+    1. ``live``   — what the collection engine actually scraped (rebuilt only
+       when the store changed; each sweep bumps the signature).
+    2. ``custom`` — the user's own files in the data directory
+       (``app.custom_data``). Rebuilt when a file's size/mtime changes, so
+       dropping in another file is enough — no restart.
+    3. ``demo``   — the deterministic synthetic store.
+
+    Live mode with an empty store falls through to custom/demo rather than
+    rendering an empty dashboard with no explanation.
     """
     global _dataset, _live_dataset, _live_signature
 
@@ -727,13 +747,25 @@ def get_dataset() -> Dataset:
         if _live_dataset is not None and _live_dataset.observations:
             return _live_dataset
 
+    # The user's own data wins over the synthetic demo dataset whenever files
+    # are present. Import errors must never take the dashboard down.
+    try:
+        from .custom_data import get_custom_dataset
+
+        custom = get_custom_dataset()
+    except Exception as exc:  # pragma: no cover - defensive
+        print(f"[apix] custom data could not be loaded ({type(exc).__name__}: {exc}); using the demo dataset")
+        custom = None
+    if custom is not None and custom.observations:
+        return custom
+
     if _dataset is None:
         _dataset = build_dataset()
     return _dataset
 
 
 def dataset_mode() -> str:
-    """'live' only when live mode is selected AND data exists, else 'demo'."""
+    """'live' / 'custom' when that data actually exists, else 'demo'."""
     return get_dataset().origin
 
 
@@ -742,3 +774,13 @@ def invalidate_live_cache() -> None:
     global _live_dataset, _live_signature
     _live_dataset = None
     _live_signature = None
+
+
+def invalidate_custom_cache() -> None:
+    """Force the custom (imported-file) view to be rebuilt on the next request."""
+    try:
+        from .custom_data import invalidate_cache
+
+        invalidate_cache()
+    except Exception:  # pragma: no cover - defensive
+        pass

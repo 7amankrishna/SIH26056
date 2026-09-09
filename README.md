@@ -61,12 +61,35 @@ point the same pipeline at instead.
 | Index engine (route/airline/lead-time/aggregate APIx) | ✅ deterministic |
 | Quality engine (VALID / SUSPICIOUS / DUPLICATE / INVALID / SOLD_OUT / STALE) | ✅ auditable |
 | Deterministic demo dataset (24 routes · 6 airlines · 5 active sources · 90 days) | ✅ |
+| **Bring your own data** — drop CSV/JSON fare exports in `data/`, they replace the demo data and merge additively | ✅ |
 | Background collection engine (scheduled sweeps → normalize → quality gate → SQLite) | ✅ |
 | In-request sweeps on serverless (Vercel) + ephemeral/durable store labelling | ✅ |
 | **Demo ↔ Scraper toggle** on every screen (server-side, persisted) | ✅ |
 | Raw-payload archive + "as collected" Live Feed screen | ✅ |
 | Backtests / validation metrics | ✅ |
 | Docker Compose | ✅ |
+
+## Using your own data
+
+The demo dataset is a stand-in. To put **your** fares on the dashboard, drop your
+export into [`data/`](data/README.md) — CSV, TSV, JSON or JSONL, any column
+names you like (`Cheapest Fare (INR)`, `Date of Journey`, `From`/`To`, … are all
+recognised). Nothing else changes: no code, no restart, and **adding another file
+merges its rows in**, so growing the dataset is a file drop.
+
+```bash
+cp my_fares.csv data/          # the dashboard now serves your data
+cd backend && python -m app.custom_data   # per-file report: rows, mapping, rejects
+```
+
+The dashboard switches its badge from `DEMO DATA` to `YOUR DATA`, every screen
+(overview, index, routes, airlines, lead time, quality, collection monitor) reads
+the imported observations, and `GET /api/data/files` reports exactly which files
+fed each number, how columns were mapped and which rows were rejected and why.
+Missing fields (route, lead time, fare components, quality flags) are derived;
+unusable rows are counted, never invented. Full contract:
+[`docs/CUSTOM_DATA.md`](docs/CUSTOM_DATA.md), quick reference:
+[`data/README.md`](data/README.md).
 
 ## Quick start
 
@@ -172,6 +195,17 @@ every sweep adds a collection day, and the index rebases against its own base
 period as history accrues.
 
 ---
+
+## Data sources, in priority order
+
+| Priority | Origin | Source | Badge |
+| --- | --- | --- | --- |
+| 1 | `live` | what the collection engine scraped (SQLite/Postgres) | `LIVE · SCRAPED DATA` |
+| 2 | `custom` | your files in `data/` (`APIX_CUSTOM_DATA_DIR`) | `YOUR DATA` |
+| 3 | `demo` | the deterministic synthetic generator | `DEMO DATA` |
+
+Every response carries `data_origin`, so an API consumer — or an auditor — can
+always tell which of the three they are looking at.
 
 ## Dashboard screens
 

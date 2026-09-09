@@ -128,7 +128,9 @@ def test_normalize_maps_canonical_fields():
     ctx = QualityContext.build(dt.date.today().isoformat(), {}, [])
     q = make_query()
     obs = normalize_offer(
-        RawOffer(payload=offer_payload(), source="stub", url="u://x", fetched_at="2026-09-06T10:00:00+05:30"),
+        # Relative to *now*: a hardcoded collection timestamp eventually ages
+        # past the staleness window and the row is legitimately flagged STALE.
+        RawOffer(payload=offer_payload(), source="stub", url="u://x", fetched_at=dt.datetime.now().isoformat()),
         q, ctx, seq=0,
     )
     assert obs["route"] == "DEL-BOM"

@@ -5,3 +5,6 @@ pydantic-settings==2.7.0
 httpx==0.28.1
 pytest==8.3.4
 psycopg2-binary==2.9.10
+# Optional: read .xlsx/.xlsm fare exports straight from the data directory.
+# The loader degrades gracefully (with a clear message) when it is not installed.
+openpyxl==3.1.5

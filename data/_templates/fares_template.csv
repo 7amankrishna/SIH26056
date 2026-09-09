@@ -1,0 +1,4 @@
+collection_date,route,airline,departure_date,total_fare,source,seats_remaining
+2026-09-01,DEL-BOM,6E,2026-09-08,4820,my_export,14
+2026-09-01,DEL-BOM,AI,2026-09-08,5610,my_export,6
+2026-09-02,BLR-DEL,UK,2026-09-09,6290,my_export,9

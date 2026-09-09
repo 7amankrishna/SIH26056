@@ -85,7 +85,9 @@ def _index_routes(ds: Dataset) -> list[str]:
     (``dataset._finalize_aggregates``), so the engine must iterate the same
     subset — otherwise every uncollected route shows up as a phantom zero.
     """
-    if ds.origin == "live" and ds.route_meta:
+    if ds.origin in ("live", "custom"):
+        # An imported/live basket is exactly the routes that have data — an
+        # empty one must stay empty rather than falling back to the demo basket.
         return [r for r in ds.route_meta if r in ROUTES]
     return DS_ROUTES_IN_INDEX
 
@@ -187,15 +189,16 @@ def overview(ds: Dataset) -> dict[str, Any]:
         "last_collection": last_collection,
         "last_run_at": last_run_at,
         "index_freshness": freshness,
-        "demo_mode": ds.origin != "live",
+        "demo_mode": ds.origin == "demo",
         "data_origin": ds.origin,
         "live_sources": live_sources,
         "days_collected": days_collected,
         "routes_with_data": len({o.route for o in ds.observations if o.quality_status in ("VALID", "SUSPICIOUS")}),
+        "index_coverage": _coverage(ds, last),
         "data_period": {"start": dates[0], "end": last},
         "base_period": {"start": ds.base_period_start.isoformat(), "end": ds.base_period_end.isoformat()},
         "methodology_version": "apix-1.0.0",
-        "weight_version": "provisional-dgca-v0",
+        "weight_version": _weight_version(ds),
     }
 
 
@@ -273,8 +276,8 @@ def route_list(ds: Dataset, top: Optional[int] = None) -> list[dict[str, Any]]:
             "route_index": round(route_idx, 1) if route_idx else None,
             "change_24h": change_24h,
             "change_7d": change_7d,
-            "base_price": ds.route_meta[route]["base_price"],
-            "weight": ds.route_meta[route]["weight"],
+            "base_price": (ds.route_meta.get(route) or {}).get("base_price", 0.0),
+            "weight": (ds.route_meta.get(route) or {}).get("weight", 0.0),
             "observations": price["observations"] if price else 0,
             "quality": round(price["quality"] * 100, 1) if price else None,
             "airlines": price["airlines"] if price else 0,
@@ -434,7 +437,7 @@ def lead_time_analysis(
     # The published curve is fixed; a live collection only has the lead times it
     # actually scheduled, so widen the axis to whatever was observed.
     leads = list(LEAD_TIMES)
-    if ds.origin == "live":
+    if ds.origin in ("live", "custom"):
         leads = sorted(set(LEAD_TIMES) | {o.lead_time_days for o in ds.observations if o.lead_time_days > 0})
 
     for lead in leads:
@@ -474,7 +477,7 @@ def lead_time_analysis(
         "insight": (
             f"Average observed fare is {elasticity}% higher at {short_label} than at {long_label}."
             if elasticity is not None
-            else ("Lead-time curve needs at least two collected lead times." if ds.origin == "live" else None)
+            else ("Lead-time curve needs at least two collected lead times." if ds.origin in ("live", "custom") else None)
         ),
         "routes": route,
         "airline": airline,
@@ -495,7 +498,11 @@ def fare_distribution(ds: Dataset, route: Optional[str] = None) -> dict[str, Any
            and (route is None or o.route == route)]
     fares = sorted(o.total_fare for o in obs)
     if not fares:
-        return {"as_of": last, "observations": 0, "route": route}
+        return {
+            "as_of": last, "route": route, "observations": 0, "currency": "INR",
+            "p10": 0.0, "p25": 0.0, "median": 0.0, "mean": 0.0, "p75": 0.0,
+            "p90": 0.0, "min": 0.0, "max": 0.0, "std_dev": 0.0, "histogram": [],
+        }
 
     def pct(p: float) -> float:
         idx = int((len(fares) - 1) * p)
@@ -655,12 +662,21 @@ def collection_runs(ds: Dataset) -> dict[str, Any]:
     dates = _last_n_days(ds)
     last = dates[-1]
 
+    catalogue = SOURCES
+    if ds.origin == "custom":
+        # An import must not be padded with built-in sources that emitted nothing.
+        present = {o.source for o in ds.observations}
+        catalogue = {sid: meta for sid, meta in SOURCES.items() if sid in present}
+        active = [s for s in ACTIVE_SOURCE_IDS if s in present]
+    else:
+        active = ACTIVE_SOURCE_IDS
+
     per_source: dict[str, dict[str, Any]] = {}
-    for sid, meta in SOURCES.items():
+    for sid, meta in catalogue.items():
         obs = [o for o in ds.observations if o.source == sid]
         percent_valid = (sum(1 for o in obs if o.quality_status in ("VALID", "SUSPICIOUS")) / len(obs) * 100.0) if obs else 0.0
         failures = sum(1 for o in obs if o.quality_status == "INVALID")
-        latency = 380 + (hash(sid) % 900) if sid in ACTIVE_SOURCE_IDS else 0
+        latency = 380 + (hash(sid) % 900) if sid in active else 0
         per_source[sid] = {
             "source": sid,
             "name": meta["name"],
@@ -668,12 +684,12 @@ def collection_runs(ds: Dataset) -> dict[str, Any]:
             "status": meta["status"],
             "adapter": meta["adapter"],
             "compliance": meta["compliance"],
-            "last_run": (f"{last}T09:0{ACTIVE_SOURCE_IDS.index(sid) + 1 if sid in ACTIVE_SOURCE_IDS else 0}:00+05:30") if sid in ACTIVE_SOURCE_IDS else None,
+            "last_run": (f"{last}T09:0{active.index(sid) + 1 if sid in active else 0}:00+05:30") if sid in active else None,
             "observations": len(obs),
             "valid_observations": sum(1 for o in obs if o.quality_status in ("VALID", "SUSPICIOUS")),
             "success_rate": round(percent_valid, 1),
             "failure_count": failures,
-            "avg_latency_ms": latency if sid in ACTIVE_SOURCE_IDS else None,
+            "avg_latency_ms": latency if sid in active else None,
             "quotes": meta["base_capacity"],
         }
 
@@ -681,13 +697,13 @@ def collection_runs(ds: Dataset) -> dict[str, Any]:
         "as_of": last,
         "sources": per_source,
         "summary": {
-            "active_sources": len(ACTIVE_SOURCE_IDS),
+            "active_sources": len(active),
             "healthy_sources": sum(1 for s in per_source.values() if s["status"] == "healthy"),
             "degraded_sources": sum(1 for s in per_source.values() if s["status"] == "degraded"),
             "disabled_sources": sum(1 for s in per_source.values() if s["status"] == "disabled"),
             "ready_sources": sum(1 for s in per_source.values() if s["status"] == "ready"),
             "last_run": last,
-            "collection_success_rate": round(sum(s["success_rate"] for s in per_source.values() if s["observations"]) / max(1, len(ACTIVE_SOURCE_IDS)), 1),
+            "collection_success_rate": round(sum(s["success_rate"] for s in per_source.values() if s["observations"]) / max(1, len(active)), 1),
         },
     }
 
@@ -759,6 +775,32 @@ def _route_provenance(ds: Dataset, route: str, date: str) -> Optional[dict[str, 
 # Methodology static content
 # --------------------------------------------------------------------------- #
 
+def _coverage(ds: Dataset, day: Optional[str]) -> Optional[dict]:
+    """How much of the basket reported on ``day`` (None when there is no day)."""
+    if not day:
+        return None
+    info = ds.daily_coverage.get(day)
+    routes = len([r for r in ds.route_meta])
+    if info is None:
+        return None
+    return {
+        "routes": info["routes"],
+        "basket_routes": routes,
+        "weight": round(info["weight"], 4),
+        "complete": info["weight"] >= 0.999,
+    }
+
+
+def _weight_version(ds: Dataset) -> str:
+    """Which weighting scheme is actually in force for *this* dataset."""
+    basis = (ds.import_notes or {}).get("weight_basis")
+    if ds.origin == "custom" and basis == "observation_share":
+        return "provisional-observation-share-v1"
+    if ds.origin == "custom":
+        return "user-supplied-v1"
+    return "provisional-dgca-v0"
+
+
 def methodology(ds: Dataset) -> dict[str, Any]:
     return {
         "title": "APIx — Methodological Framework",
@@ -781,7 +823,7 @@ def methodology(ds: Dataset) -> dict[str, Any]:
             "wᵣ": "provisional route weight (Σ wᵣ = 1)",
         },
         "base_period": {"start": ds.base_period_start.isoformat(), "end": ds.base_period_end.isoformat()},
-        "weight_version": "provisional-dgca-v0",
+        "weight_version": _weight_version(ds),
         "disclaimer": "This is a prototype statistical methodology for a SIH 2026 demonstration. It is not an official CPI series and does not represent MoSPI/NSO methodology.",
     }
 

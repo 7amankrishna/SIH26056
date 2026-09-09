@@ -78,6 +78,20 @@ class Settings:
     # Number of days for which the deterministic demo store is generated.
     demo_history_days: int = int(_env("APIX_DEMO_DAYS", "90"))
 
+    # ------------------------------------------------------------------ #
+    # Custom data (the user's own fare exports replace the demo dataset)
+    # ------------------------------------------------------------------ #
+
+    # Directory scanned for the user's own data files (CSV/JSON/JSONL). Every
+    # supported file in it is loaded and merged, so more data = drop a file in.
+    # Default: <repo>/data (committed, unlike backend/data which is runtime state).
+    custom_data_dir: Path = Path(_env("APIX_CUSTOM_DATA_DIR", "").strip()
+                                 or str(Path(__file__).resolve().parents[2] / "data"))
+
+    # Master switch for custom data. When off (or when APIX_DATA_MODE=demo pins
+    # the source to the synthetic store) the demo generator serves the dashboard.
+    custom_data_enabled: bool = _env_bool("APIX_CUSTOM_DATA", "1")
+
     # Prefix for the REST API (the SPA is served by Vite in dev and proxied).
     api_prefix: str = "/api"
 

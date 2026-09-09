@@ -176,6 +176,14 @@ Backend (prefix `APIX_`):
 - `APIX_DEMO_DAYS` — default `90`. Number of days the deterministic dataset spans.
 - `APIX_DATA_DIR` — where the SQLite store lives. Defaults to `backend/data/`
   locally and `/tmp/apix-data` on a serverless runtime.
+- `APIX_CUSTOM_DATA_DIR` — directory scanned for **your own** fare files
+  (CSV/JSON/JSONL). Defaults to `<repo>/data`. Any usable file there replaces the
+  synthetic demo dataset; see `docs/CUSTOM_DATA.md`. Note that a serverless
+  filesystem is read-only outside `/tmp`, so on Vercel ship the files with the
+  build (they are read, never written) or set this to a bundled path.
+- `APIX_CUSTOM_DATA` — default `1`. `0` disables custom-data loading.
+- `APIX_DATA_MODE` — `demo` pins the dashboard to the synthetic dataset (custom
+  files are ignored), `live` pins it to scraped data.
 - `APIX_IGNORE_DATABASE_URL` — defaults to `1` on Vercel (`VERCEL` or
   `VERCEL_ENV` set), `0` elsewhere. `1` / `true` / `yes` / `on` select SQLite
   without reading or connecting to `DATABASE_URL`; `0` / `false` / `no` / `off`

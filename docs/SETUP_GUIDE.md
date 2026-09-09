@@ -170,6 +170,8 @@ ignore-`DATABASE_URL` default, this guide and the Supabase schema.
 | `APIX_SWEEP_LEAD_TIMES` | `1,7,30` | you want different advance-booking windows |
 | `APIX_COLLECTOR_ENABLED` | auto (`0` on Vercel) | leave alone on Vercel — a background loop cannot survive there. Set `1` only on Docker/VM deployments |
 | `APIX_DATA_DIR` | auto (`/tmp/apix-data` on Vercel) | used when `DATABASE_URL` is ignored or unset |
+| `APIX_CUSTOM_DATA_DIR` | `<repo>/data` | where **your** fare exports live. Drop a CSV/JSON there and it replaces the demo dataset; drop another and the rows merge in. See `data/README.md` |
+| `APIX_CUSTOM_DATA` | `1` | set `0` to ignore those files and go back to the synthetic dataset |
 
 When you enable PostgreSQL, **do not set** `DATABASE_URL` to a MySQL, SQLite,
 Redis, or `https://…` address — anything that is not PostgreSQL is refused on

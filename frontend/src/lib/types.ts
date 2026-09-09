@@ -5,7 +5,7 @@ export interface Health {
   version: string;
   title: string;
   demo_mode: boolean;
-  data_origin?: "live" | "demo";
+  data_origin?: DataMode;
   collector_running?: boolean;
   uptime_seconds: number;
   timestamp: string;
@@ -29,7 +29,7 @@ export interface Overview {
   index_freshness: string;
   demo_mode: boolean;
   /** Which dataset the API served: 'live' = scraped, 'demo' = synthetic. */
-  data_origin?: "live" | "demo";
+  data_origin?: DataMode;
   live_sources?: string[];
   days_collected?: number;
   routes_with_data?: number;
@@ -37,6 +37,7 @@ export interface Overview {
   base_period: { start: string; end: string };
   methodology_version: string;
   weight_version: string;
+  index_coverage?: { routes: number; basket_routes: number; weight: number; complete: boolean } | null;
 }
 
 export interface TrendPoint {
@@ -243,7 +244,7 @@ export interface FaresResponse {
 // Collection engine (scraper) — data-source mode, runs, raw feed
 // --------------------------------------------------------------------------- //
 
-export type DataMode = "live" | "demo";
+export type DataMode = "live" | "demo" | "custom";
 
 export interface StoreCounts {
   observations: number;
@@ -374,4 +375,51 @@ export interface SweepAccepted {
   accepted?: boolean;
   synchronous?: boolean;
   detail?: string;
+}
+
+// --- imported / custom data ------------------------------------------------ //
+
+export interface DataFileReport {
+  path: string;
+  name: string;
+  kind: string;
+  rows: number;
+  observations: number;
+  rejected: number;
+  columns: string[];
+  mapped: Record<string, string>;
+  unmapped: string[];
+  warnings: string[];
+  errors: string[];
+  size_bytes: number;
+  modified_at: string | null;
+}
+
+export interface CustomDataReport {
+  enabled: boolean;
+  data_dir: string;
+  active: boolean;
+  origin: DataMode;
+  files: DataFileReport[];
+  totals: {
+    files?: number;
+    rows_in?: number;
+    rows_skipped?: number;
+    observations?: number;
+    routes?: number;
+    airlines?: number;
+    sources?: number;
+    quality?: Record<string, number>;
+  };
+  date_range: {
+    start: string | null;
+    end: string | null;
+    days: number;
+    base_period?: { start: string | null; end: string | null };
+  };
+  routes: { route: string; weight: number; observations: number; is_basket_route: boolean }[];
+  airlines: { code: string; name: string; observations: number }[];
+  sources: { id: string; name: string; observations: number; files?: string[] }[];
+  weight_basis: string;
+  notes: string[];
 }

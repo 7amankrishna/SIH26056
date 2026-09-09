@@ -122,8 +122,9 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
 export function Layout() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const { data: overview } = useOverview();
-  const { isLive, mode, daysCollected, counts, ready } = useDataSource();
+  const { isLive, isCustom, mode, daysCollected, counts, ready, dataFiles } = useDataSource();
   const [bannerHidden, setBannerHidden] = useState(false);
+  const [dataBannerHidden, setDataBannerHidden] = useState(false);
   const location = useLocation();
 
   // Contextual title for the top header (rendered as a paragraph so the
@@ -242,6 +243,37 @@ export function Layout() {
                 <button
                   onClick={() => setBannerHidden(true)}
                   className="ml-auto shrink-0 rounded-md px-2 py-1 text-[11px] font-medium text-amber-700 transition-colors hover:bg-amber-100"
+                >
+                  Dismiss
+                </button>
+              </div>
+            )}
+            {isCustom && !dataBannerHidden && (dataFiles?.notes?.length ?? 0) > 0 && (
+              <div className="mb-4 flex items-start gap-3 rounded-xl border border-sky-200 bg-sky-50 px-4 py-3">
+                <Database className="mt-0.5 h-4 w-4 shrink-0 text-sky-600" />
+                <p className="text-xs leading-relaxed text-sky-800">
+                  <span className="font-semibold">Serving your imported data.</span>{" "}
+                  {dataFiles?.notes?.[0]}
+                  {dataFiles?.files?.length ? (
+                    <>
+                      {" "}Files:{" "}
+                      <span className="font-mono">{dataFiles.files.map((f) => f.name).join(", ")}</span>
+                    </>
+                  ) : null}
+                  {overview?.index_coverage && !overview.index_coverage.complete ? (
+                    <>
+                      {" "}The latest day covers{" "}
+                      <span className="font-semibold">
+                        {overview.index_coverage.routes}/{overview.index_coverage.basket_routes} routes
+                      </span>{" "}
+                      ({Math.round(overview.index_coverage.weight * 100)}% of basket weight), so the
+                      headline index is renormalised over those routes only.
+                    </>
+                  ) : null}
+                </p>
+                <button
+                  onClick={() => setDataBannerHidden(true)}
+                  className="ml-auto shrink-0 rounded-md px-2 py-1 text-[11px] font-medium text-sky-700 transition-colors hover:bg-sky-100"
                 >
                   Dismiss
                 </button>

@@ -4,6 +4,7 @@
 import type {
   AirlineSummary,
   CollectStatus,
+  CustomDataReport,
   DataSourceState,
   DataMode,
   SweepAccepted,
@@ -71,6 +72,11 @@ export const api = {
     request<FareDistribution>(`/fares/distribution${route ? `?route=${route}` : ""}`),
 
   quality: () => request<Quality>("/quality"),
+
+  // ---- imported data (the user's own files) ----------------------------- //
+  dataFiles: () => request<CustomDataReport>("/data/files"),
+  reloadDataFiles: () =>
+    request<CustomDataReport>("/data/reload", { method: "POST" }),
 
   collectionRuns: () => request<CollectionRuns>("/collection-runs"),
   provenance: (indexId: string) =>
