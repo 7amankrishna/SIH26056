@@ -22,8 +22,10 @@ export default function App() {
             <Route path="/routes" element={<Routes />} />
             <Route path="/airlines" element={<Airlines />} />
             <Route path="/lead-time" element={<LeadTime />} />
+            <Route path="/quality" element={<CollectionMonitor />} />
             <Route path="/collection" element={<CollectionMonitor />} />
             <Route path="/import" element={<ImportData />} />
+            <Route path="/methodology" element={<APIPage />} />
             <Route path="/api" element={<APIPage />} />
           </Route>
         </RouterRoutes>

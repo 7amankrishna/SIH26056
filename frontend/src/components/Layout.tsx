@@ -7,6 +7,7 @@ import { useEffect, useState } from "react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import {
   Activity,
+  BookOpen,
   Building2,
   CalendarClock,
   Database,
@@ -16,6 +17,7 @@ import {
   Plane,
   Radar,
   Route,
+  ShieldCheck,
   TrendingUp,
   Upload,
   X,
@@ -28,96 +30,84 @@ import { useDataSource } from "../hooks/useDataSource";
 import { DeltaBadge } from "./badges";
 import { formatDateTime } from "../lib/format";
 
-const NAV_SECTIONS = [
-  {
-    title: "Intelligence",
-    items: [
-      { to: "/", label: "Overview", icon: Gauge, end: true },
-      { to: "/index", label: "Airfare Index", icon: TrendingUp },
-      { to: "/routes", label: "Routes", icon: Route },
-      { to: "/airlines", label: "Airlines", icon: Building2 },
-      { to: "/lead-time", label: "Lead Time", icon: CalendarClock },
-    ],
-  },
-  {
-    title: "Operations",
-    items: [
-      { to: "/import", label: "Import Data", icon: Upload },
-      { to: "/collection", label: "Collection Monitor", icon: Radar },
-      { to: "/api", label: "API / Data Access", icon: Activity },
-    ],
-  },
+const NAV_ITEMS = [
+  { to: "/", label: "Overview", icon: Gauge, end: true },
+  { to: "/index", label: "Airfare Index", icon: TrendingUp },
+  { to: "/routes", label: "Routes", icon: Route },
+  { to: "/airlines", label: "Airlines", icon: Building2 },
+  { to: "/lead-time", label: "Lead Time", icon: CalendarClock },
+  { to: "/quality", label: "Data Quality", icon: ShieldCheck },
+  { to: "/import", label: "Import Data", icon: Upload },
+  { to: "/collection", label: "Collection Monitor", icon: Radar },
+  { to: "/methodology", label: "Methodology", icon: BookOpen },
+  { to: "/api", label: "API / Data Access", icon: Activity },
 ];
 
-const FLAT_NAV = NAV_SECTIONS.flatMap((s) => s.items);
+const FLAT_NAV = NAV_ITEMS;
 
 function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   return (
-    <>
-      {/* Brand — mark and wordmark rendered ~20% larger than the previous
-          36px / 16px treatment (44px mark, 20px wordmark). */}
-      <div className="flex items-center gap-3 px-4 pb-5 pt-6">
-        <div className="brand-mark flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-white">
-          <Plane className="h-6 w-6" />
-        </div>
-        <div className="min-w-0">
-          <div className="brand-wordmark text-xl font-extrabold tracking-tight">
-            APIx
+    <div className="flex min-h-full flex-col justify-between">
+      <div>
+        {/* Brand */}
+        <div className="flex items-center gap-3 px-4 pb-5 pt-6">
+          <div className="brand-mark flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-white">
+            <Plane className="h-6 w-6" />
           </div>
-          <div className="text-[11px] leading-tight text-[#93a5c4]">
-            Real-Time Airfare Price Index · India
-          </div>
-        </div>
-      </div>
-
-      <nav className="flex-1 space-y-5 overflow-y-auto px-3 pb-4" aria-label="Primary">
-        {NAV_SECTIONS.map((section) => (
-          <div key={section.title}>
-            <p className="sidebar-kicker mb-1.5">{section.title}</p>
-            <div className="space-y-0.5">
-              {section.items.map((item) => (
-                <NavLink
-                  key={item.to}
-                  to={item.to}
-                  end={item.end}
-                  onClick={onNavigate}
-                  className={({ isActive }) =>
-                    `sidebar-nav-item ${isActive ? "sidebar-nav-item-active" : ""}`
-                  }
-                >
-                  <item.icon className="h-4 w-4 shrink-0" />
-                  {item.label}
-                </NavLink>
-              ))}
+          <div className="min-w-0">
+            <div className="brand-wordmark text-xl font-extrabold tracking-tight">
+              APIx
             </div>
-          </div>
-        ))}
-      </nav>
-
-      {/* Government / statistical identity — neutral placeholder seal,
-          deliberately not an official emblem. */}
-      <div className="px-4 pb-3">
-        <div className="rounded-xl border border-white/10 bg-white/5 p-3.5">
-          <div className="flex items-start gap-3">
-            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[#7dd3fc]/30 bg-[#38bdf8]/10 text-[#7dd3fc]">
-              <Landmark className="h-[18px] w-[18px]" aria-hidden />
-            </span>
-            <div className="min-w-0">
-              <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[#7dd3fc]/90">
-                A prototype for
-              </p>
-              <p className="mt-0.5 text-xs font-medium leading-snug text-[#e2e8f0]">
-                Ministry of Statistics &amp; Programme Implementation
-              </p>
-              <p className="mt-1 text-[11px] leading-snug text-[#93a5c4]">
-                High-frequency airfare intelligence for CPI augmentation
-              </p>
+            <div className="text-[11px] leading-tight text-[#93a5c4]">
+              Real-Time Airfare Price Index · India
             </div>
           </div>
         </div>
+
+        {/* Primary Navigation items */}
+        <nav className="space-y-1 px-3 pb-4" aria-label="Primary">
+          {NAV_ITEMS.map((item) => (
+            <NavLink
+              key={item.to}
+              to={item.to}
+              end={item.end}
+              onClick={onNavigate}
+              className={({ isActive }) =>
+                `sidebar-nav-item ${isActive ? "sidebar-nav-item-active" : ""}`
+              }
+            >
+              <item.icon className="h-4 w-4 shrink-0" />
+              {item.label}
+            </NavLink>
+          ))}
+        </nav>
       </div>
-      <p className="px-4 pb-4 text-[10px] text-[#7d8db1]">v0.1.0 · SIH26056</p>
-    </>
+
+      {/* Government / statistical identity */}
+      <div className="px-4 pb-4 pt-4">
+        <div className="flex flex-col items-start gap-3.5">
+          <img 
+            src="https://upload.wikimedia.org/wikipedia/commons/5/55/Emblem_of_India.svg" 
+            alt="Government of India"
+            className="h-11 w-auto opacity-70"
+            style={{ filter: "brightness(0) invert(1)" }}
+          />
+          <div className="text-[10.5px] leading-relaxed text-[#93a5c4]">
+            <p>A prototype for</p>
+            <p>Ministry of Statistics and</p>
+            <p>Programme Implementation</p>
+            <p>(MoSPI)</p>
+          </div>
+          <div className="text-[10.5px] leading-relaxed text-[#93a5c4]">
+            <p>High-frequency airfare</p>
+            <p>intelligence for CPI augmentation</p>
+          </div>
+          <div className="text-[10px] text-[#7d8db1]">
+            v0.1.0 (SIH26056)
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -167,8 +157,8 @@ export function Layout() {
         Skip to content
       </a>
 
-      {/* Desktop sidebar */}
-      <aside className="sidebar-surface sticky top-0 z-20 hidden h-screen w-64 shrink-0 flex-col lg:flex">
+      {/* Desktop sidebar — stays fixed as you scroll through all sections of the dashboard */}
+      <aside className="sidebar-surface sticky top-0 z-20 hidden h-screen w-64 shrink-0 flex-col overflow-y-auto lg:flex">
         <SidebarContent />
       </aside>
 

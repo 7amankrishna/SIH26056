@@ -7,45 +7,54 @@ export function HeroBanner() {
   return (
     <section
       aria-label="APIx — India's airfare intelligence"
-      className="hero-panel relative overflow-hidden rounded-2xl text-white shadow-pop"
+      className="relative overflow-hidden rounded-xl border border-[#e2e8f0] shadow-sm flex items-center min-h-[140px] sm:min-h-[150px] lg:h-[155px] bg-[#f0f5fa]"
     >
-      {/* flight-path motif */}
-      <svg
-        viewBox="0 0 420 170"
-        preserveAspectRatio="xMaxYMid meet"
-        className="pointer-events-none absolute inset-y-0 right-0 h-full w-[62%] max-w-[560px]"
-        aria-hidden
-      >
-        <path
-          d="M12 150 C 120 44, 268 30, 402 62"
-          fill="none"
-          stroke="rgba(125,211,252,0.45)"
-          strokeWidth="1.5"
-          strokeDasharray="2 9"
-          strokeLinecap="round"
+      {/* Right-side HD artwork: starts from extreme right (0 gap) and extends till half (50%) */}
+      <div className="pointer-events-none absolute inset-y-0 right-0 w-full sm:w-[52%] lg:w-1/2 overflow-hidden z-0">
+        <img
+          src="/banner_artwork_hd.png"
+          alt="Commercial airplane flying over city skyline"
+          className="w-full h-full object-cover object-[right_30%] select-none opacity-50 sm:opacity-100 transition-all"
         />
-        <circle cx="12" cy="150" r="3" fill="#38bdf8" opacity="0.8" />
-        <circle cx="402" cy="62" r="3" fill="#e0f2fe" />
-      </svg>
-      <Plane
-        className="absolute right-6 top-6 h-9 w-9 rotate-45 text-[#bae0fd] drop-shadow-[0_6px_16px_rgba(56,189,248,0.45)] sm:right-10 sm:top-8 sm:h-11 sm:w-11"
-        aria-hidden
-      />
+        {/* Soft linear fade on the left edge of the half-banner graphic */}
+        <div className="absolute inset-y-0 left-0 w-24 sm:w-32 bg-gradient-to-r from-[#f0f5fa] via-[#f0f5fa]/80 to-transparent"></div>
+      </div>
 
-      <div className="relative px-6 py-6 sm:px-8 sm:py-7">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-sky-300">
-          India&apos;s Airfare Intelligence
-        </p>
-        <h2 className="mt-2 max-w-xl text-2xl font-extrabold leading-tight tracking-tight sm:text-[28px]">
-          Real-Time Airfare Price Index for India
-        </h2>
-        <p className="mt-2 max-w-lg text-sm leading-relaxed text-slate-300">
-          High-frequency airfare intelligence for CPI augmentation — collected
-          transparently, indexed reproducibly, published for everyone.
-        </p>
-        <p className="mt-4 hidden text-xs font-medium text-[#bae0fd]/90 sm:block">
-          Track. Understand. Inform a fairer tomorrow.
-        </p>
+      {/* Top-right tagline: anchored cleanly in the sky on the far right */}
+      <div className="hidden md:flex flex-col items-end text-right text-xs sm:text-[13px] text-[#091b38] font-medium leading-snug absolute top-4 sm:top-5 right-5 sm:right-8 z-20 pointer-events-none">
+        <span>Track. Understand.</span>
+        <span>Inform a fairer tomorrow.</span>
+      </div>
+
+      {/* Mobile contrast overlay */}
+      <div className="absolute inset-0 bg-gradient-to-r from-[#f0f5fa] via-[#f0f5fa]/95 to-transparent sm:hidden z-[1] pointer-events-none"></div>
+
+      {/* Foreground Content on the left half */}
+      <div className="relative z-10 w-full h-full px-5 py-4 sm:px-8 sm:py-5 flex flex-col justify-between max-w-full sm:max-w-[48%]">
+        
+        {/* Top kicker */}
+        <div>
+          <p className="text-[10px] sm:text-[11px] font-semibold uppercase tracking-[0.2em] text-[#2b6cb0]">
+            India's Airfare Intelligence
+          </p>
+        </div>
+
+        {/* Main Title Area */}
+        <div className="flex flex-wrap items-baseline gap-2 sm:gap-3.5 my-2 sm:my-auto">
+          <h1 className="text-3xl sm:text-4xl lg:text-[45px] font-extrabold text-[#091b38] tracking-tight leading-none">
+            APIx
+          </h1>
+          <h2 className="text-base sm:text-xl lg:text-[23px] font-bold text-[#091b38] tracking-tight leading-snug sm:leading-none">
+            Real-Time Airfare Price Index for India
+          </h2>
+        </div>
+        
+        {/* Subtitle */}
+        <div>
+          <p className="text-xs sm:text-[13.5px] font-normal text-slate-500 leading-tight">
+            High-frequency airfare intelligence for CPI augmentation
+          </p>
+        </div>
       </div>
     </section>
   );
