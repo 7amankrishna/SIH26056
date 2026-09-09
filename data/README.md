@@ -1,8 +1,13 @@
 # Your data goes here
 
-Any file you drop in this folder replaces the synthetic demo dataset on the
-dashboard. Nothing else has to change — no code, no restart. Add another file
-and its rows are merged in, so **more data = one more file**.
+**Easiest way: open the dashboard → Operations → *Import Data* → drop your file
+on the box.** It uploads, parses and reports back (rows, column mapping, rejects)
+in one step, and you can delete files from the same screen.
+
+Files in this folder replace the synthetic demo dataset. Nothing else has to
+change — no code, no restart. Add another file and its rows are merged in, so
+**more data = one more file**. Uploads land here too, never overwriting an
+existing file (`fares.csv` → `fares_1.csv`).
 
 ```
 data/
@@ -107,7 +112,21 @@ its share of observations — the dashboard labels this
 }
 ```
 
-## 4. Check it before you open the dashboard
+## 4. Uploading from the dashboard
+
+`POST /api/data/upload` (multipart, field name `files`) accepts the same formats
+and writes into this folder; `DELETE /api/data/files/{name}` removes one. The
+**Import Data** screen is the UI over those two calls — drag & drop, per-file
+parse report, file table with delete buttons.
+
+Notes:
+* uploads never overwrite (a repeat becomes `fares_1.csv`);
+* unsupported types (`.exe`, …) are refused with a reason, not aborting the batch;
+* filenames are sanitised, so `../../etc/passwd` cannot escape this folder;
+* on a serverless host the platform caps request bodies (Vercel: 4.5MB) — larger
+  exports go in through this folder or the CLI.
+
+## 5. Check it before you open the dashboard
 
 ```bash
 cd backend
@@ -118,7 +137,19 @@ python -m app.custom_data ../data/my.csv  # validate a single file
 …or, with the API running: `GET /api/data/files` (per-file rows, mapped columns,
 skipped rows, warnings) and `POST /api/data/reload` to force a rescan.
 
-## 5. Switching back
+## 6. Your database
+
+Uploads are also written to your database (`observations` table) — Supabase in a
+deployed setup — matched on `observation_id`, so uploading the same rows twice
+updates them instead of duplicating them. The **Import Data** screen shows
+whether it is connected and what each upload inserted/updated/replaced; use
+**Push to database** to (re)send everything that is loaded.
+
+It needs `DATABASE_URL` in the environment (`APIX_IGNORE_DATABASE_URL=0` on
+Vercel). Never send that string to anyone — put it in your `.env` or the Vercel
+project settings; the app reads it from there and never logs it.
+
+## 7. Switching back
 
 Move the files out of this folder (or set `APIX_CUSTOM_DATA=0`, or
 `APIX_DATA_MODE=demo`) and the deterministic demo dataset serves again. In live

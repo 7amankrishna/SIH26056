@@ -38,6 +38,10 @@ consumer.
 | `GET` | `/stats/overview` | Validation / backtest summary. |
 | `GET` | `/data/files` | Provenance for imported data: every file in the data directory, rows in/observations/rejects, which of your columns mapped to which canonical field, unmapped columns, warnings and errors. |
 | `POST` | `/data/reload` | Rescan the data directory now (the loader normally notices changed files on its own). Returns the same report. |
+| `POST` | `/data/upload` | Multipart upload (`files`) of CSV/TSV/JSON/JSONL/XLSX fare exports into the data directory. Returns what was imported (rows, column mapping, rejects) and what was refused with a reason. Never overwrites an existing file. |
+| `DELETE` | `/data/files/{name}` | Delete one imported file and rescan. `404` when it does not exist; `400` for a name that escapes the directory. |
+| `GET` | `/data/database` | Health of the durable store (Supabase/PostgreSQL) and the observation counts. Never returns the connection string. |
+| `POST` | `/data/persist` | Upsert every loaded observation into that store, matched on `observation_id`. Optional `?file=` limits it to one file's rows. `404` when nothing is loaded. |
 
 ### Collection engine (scraper)
 

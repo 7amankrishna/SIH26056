@@ -61,7 +61,7 @@ point the same pipeline at instead.
 | Index engine (route/airline/lead-time/aggregate APIx) | ✅ deterministic |
 | Quality engine (VALID / SUSPICIOUS / DUPLICATE / INVALID / SOLD_OUT / STALE) | ✅ auditable |
 | Deterministic demo dataset (24 routes · 6 airlines · 5 active sources · 90 days) | ✅ |
-| **Bring your own data** — drop CSV/JSON fare exports in `data/`, they replace the demo data and merge additively | ✅ |
+| **Bring your own data** — upload CSV/Excel/JSON from the dashboard (or drop files in `data/`): replaces the demo data, merges additively | ✅ |
 | Background collection engine (scheduled sweeps → normalize → quality gate → SQLite) | ✅ |
 | In-request sweeps on serverless (Vercel) + ephemeral/durable store labelling | ✅ |
 | **Demo ↔ Scraper toggle** on every screen (server-side, persisted) | ✅ |
@@ -77,9 +77,16 @@ names you like (`Cheapest Fare (INR)`, `Date of Journey`, `From`/`To`, … are a
 recognised). Nothing else changes: no code, no restart, and **adding another file
 merges its rows in**, so growing the dataset is a file drop.
 
+**From the dashboard:** Operations → **Import Data** → drop the file on the box.
+It uploads, parses and reports back (rows, column mapping, rejected rows), and
+you can delete files from the same screen.
+
+**From disk or a shell** (same result, useful for large files or automation):
+
 ```bash
-cp my_fares.csv data/          # the dashboard now serves your data
-cd backend && python -m app.custom_data   # per-file report: rows, mapping, rejects
+cp my_fares.csv data/                              # the dashboard now serves your data
+cd backend && python -m app.custom_data            # per-file report: rows, mapping, rejects
+cd backend && python -m app.custom_data --import ~/Downloads/export.xlsx
 ```
 
 The dashboard switches its badge from `DEMO DATA` to `YOUR DATA`, every screen

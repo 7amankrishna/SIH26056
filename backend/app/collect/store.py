@@ -403,7 +403,9 @@ class Store:
                     def execute(self, q, args=()):
                         q = q.replace("?", "%s")
                         q = q.replace("INSERT OR IGNORE", "INSERT")
-                        if "INSERT INTO observations" in q:
+                        # An upsert brings its own conflict clause — appending a
+                        # second one would be a syntax error.
+                        if "INSERT INTO observations" in q and "ON CONFLICT" not in q.upper():
                             q += " ON CONFLICT DO NOTHING"
                         # special SQLite date logic
                         q = q.replace("date(collection_date) <= date(%s)", "CAST(collection_date AS DATE) <= CAST(%s AS DATE)")
@@ -414,7 +416,7 @@ class Store:
                     def executemany(self, q, args_list):
                         q = q.replace("?", "%s")
                         q = q.replace("INSERT OR IGNORE", "INSERT")
-                        if "INSERT INTO observations" in q:
+                        if "INSERT INTO observations" in q and "ON CONFLICT" not in q.upper():
                             q += " ON CONFLICT DO NOTHING"
                         cur.executemany(q, args_list)
                         return cur
@@ -594,6 +596,108 @@ class Store:
             )
             conn.commit()
             return max(0, cur.rowcount)
+
+    def delete_run_observations(self, run_id: str) -> int:
+        """Remove the observations one import run wrote (before re-importing)."""
+        if not run_id:
+            return 0
+        with self._write_lock, self._connect() as conn:
+            if not self.db_url:
+                conn.execute("BEGIN")
+            cur = conn.execute("DELETE FROM observations WHERE run_id=?", (run_id,))
+            conn.commit()
+            return max(0, cur.rowcount)
+
+    def delete_superseded(self, previous_run_id: str, current_run_id: str) -> int:
+        """Drop rows an earlier import wrote that this import did not refresh.
+
+        Used when a file is re-uploaded: the new version's rows are upserted
+        first (updating the ones that still exist), and whatever is left from the
+        previous version — a corrected fare has a new id — is removed instead of
+        lingering as a stale duplicate.
+        """
+        if not previous_run_id or previous_run_id == current_run_id:
+            return 0
+        with self._write_lock, self._connect() as conn:
+            if not self.db_url:
+                conn.execute("BEGIN")
+            cur = conn.execute(
+                "DELETE FROM observations WHERE run_id=? AND observation_id NOT IN "
+                "(SELECT observation_id FROM observations WHERE run_id=?)",
+                (previous_run_id, current_run_id),
+            )
+            conn.commit()
+            return max(0, cur.rowcount)
+
+    def upsert_observations(
+        self,
+        obs: list[dict[str, Any]],
+        *,
+        run_id: Optional[str] = None,
+        conflict_key: str = "observation_id",
+    ) -> dict[str, int]:
+        """Insert-or-update canonical observations, keyed on ``observation_id``.
+
+        This is the "import the same file twice and nothing duplicates" path:
+        a row whose id already exists is *updated in place* (a re-uploaded or
+        corrected fare), everything else is inserted. Works unchanged on
+        PostgreSQL (Supabase) and SQLite, which share this schema.
+
+        Returns ``{"inserted": n, "updated": m, "total": k}``.
+        """
+        if not obs:
+            return {"inserted": 0, "updated": 0, "total": 0}
+        if conflict_key not in OBS_COLUMNS:
+            raise ValueError(f"conflict key must be one of {OBS_COLUMNS}, got {conflict_key!r}")
+
+        now = _now()
+        # One row per id: a batch that repeats an id (the same file imported
+        # twice in one request) must write — and be counted — exactly once.
+        deduped: dict[str, tuple] = {}
+        for o in obs:
+            key = o.get("observation_id")
+            if not key:
+                continue  # without an id there is nothing to de-duplicate on
+            vals = [o.get(c) for c in OBS_COLUMNS]
+            vals[0] = key
+            deduped[key] = (run_id, *vals, 1 if o.get("in_basket", True) else 0, now)
+        rows = list(deduped.values())
+        if not rows:
+            return {"inserted": 0, "updated": 0, "total": 0}
+
+        cols = "run_id," + ",".join(OBS_COLUMNS) + ",in_basket,inserted_at"
+        placeholders = ",".join(["?"] * (len(OBS_COLUMNS) + 3))
+        # run_id is refreshed too: it marks the row as "touched by the latest
+        # import", which is what lets delete_superseded() tell a refreshed row
+        # from one the new version of a file no longer contains.
+        updates = ",".join(
+            f"{c}=excluded.{c}" for c in ("run_id", *OBS_COLUMNS[1:], "in_basket", "inserted_at")
+        )
+
+        with self._write_lock, self._connect() as conn:
+            if not self.db_url:
+                conn.execute("BEGIN")
+            # Which ids are already there? That is what separates an insert from
+            # an update, and it is what makes a re-import idempotent.
+            existing: set[str] = set()
+            ids = [r[1] for r in rows]  # rows[0] is run_id, rows[1] is observation_id
+            for i in range(0, len(ids), 500):
+                chunk = ids[i : i + 500]
+                ph = ",".join(["?"] * len(chunk))
+                found = conn.execute(
+                    f"SELECT {conflict_key} FROM observations WHERE {conflict_key} IN ({ph})",
+                    tuple(chunk),
+                ).fetchall()
+                existing.update(str(r[conflict_key]) for r in found)
+            conn.executemany(
+                f"INSERT INTO observations({cols}) VALUES({placeholders}) "
+                f"ON CONFLICT({conflict_key}) DO UPDATE SET {updates}",
+                rows,
+            )
+            conn.commit()
+
+        updated = len(existing)
+        return {"inserted": len(rows) - updated, "updated": updated, "total": len(rows)}
 
     def fingerprints_for_day(self, collection_date: str) -> set[str]:
         with self._connect() as conn:

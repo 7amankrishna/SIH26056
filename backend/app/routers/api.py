@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, File, HTTPException, Query, UploadFile
 
 from ..dataset import get_dataset
 from ..engine import (
@@ -154,6 +154,183 @@ def reload_data_files() -> dict:
     changed files on its own, but it is handy right after dropping a file in)."""
     from ..custom_data import import_report, invalidate_cache
 
+    invalidate_cache()
+    return import_report()
+
+
+def _merge_persistence(reports: list[dict]) -> Optional[dict]:
+    """Combine per-file persistence reports into one summary."""
+    if not reports:
+        return None
+    merged = {
+        "persisted": any(r.get("persisted") for r in reports),
+        "backend": next((r.get("backend") for r in reports if r.get("backend")), None),
+        "durable": any(r.get("durable") for r in reports),
+        "run_id": ", ".join(r["run_id"] for r in reports if r.get("run_id")) or None,
+        "inserted": sum(r.get("inserted", 0) for r in reports),
+        "updated": sum(r.get("updated", 0) for r in reports),
+        "replaced": sum(r.get("replaced", 0) for r in reports),
+        "total": sum(r.get("total", 0) for r in reports),
+        "error": next((r.get("error") for r in reports if r.get("error")), None),
+        "note": next((r.get("note") for r in reports if r.get("note")), None),
+    }
+    return merged
+
+
+@router.get("/data/database", response_model=schemas.DatabaseStatus)
+def get_data_database() -> dict:
+    """Can imports be persisted right now, and what is already stored?
+
+    Never reveals the connection string — only the backend, its health and the
+    observation counts, so the UI can say "connected to Supabase" or explain
+    exactly why nothing is being saved.
+    """
+    from ..persist import database_status
+
+    return database_status()
+
+
+@router.post("/data/persist", response_model=schemas.PersistenceReport)
+def persist_data_files(file: Optional[str] = Query(
+        None, description="Persist only this file's rows (default: every loaded file)")) -> dict:
+    """Push the imported observations into the database (upsert by id).
+
+    Safe to run twice: rows whose ``observation_id`` already exists are updated
+    in place, so re-running after a partial failure cannot duplicate data.
+    """
+    from ..custom_data import get_custom_dataset
+    from ..persist import persist_observations
+
+    ds = get_custom_dataset()
+    if ds is None or not ds.observations:
+        raise HTTPException(status_code=404, detail="No imported data to persist — upload a file first.")
+    observations = ds.observations
+    if file:
+        selected = [o for o in observations if file in (o.raw_payload_reference or "")]
+        if not selected:
+            raise HTTPException(status_code=404, detail=f"No rows came from '{file}'.")
+        observations = selected
+    basket = set(ds.route_meta) or None
+    return persist_observations(observations, label=file or "all", basket=basket)
+
+
+@router.post("/data/upload", response_model=schemas.UploadResponse)
+async def upload_data_files(files: list[UploadFile] = File(...)) -> dict:
+    """Import fare files through the browser.
+
+    Accepts the same formats as the data directory (csv/tsv/json/jsonl/xlsx),
+    writes them into it without ever overwriting an existing import, and returns
+    the per-file parse report so the UI can show exactly what was understood.
+    Files that cannot be accepted are listed under ``refused`` with a reason
+    rather than aborting the whole upload.
+    """
+    from ..config import settings
+    from ..custom_data import import_bytes, import_report, invalidate_cache
+
+    imported: list[dict] = []
+    refused: list[dict[str, str]] = []
+
+    for upload in files:
+        name = upload.filename or "upload.csv"
+        try:
+            payload = await upload.read()
+        except Exception as exc:  # a broken part must not kill the rest
+            refused.append({"name": name, "error": f"could not read upload: {exc}"})
+            continue
+        finally:
+            await upload.close()
+
+        if not payload:
+            refused.append({"name": name, "error": "file is empty"})
+            continue
+        if len(payload) > settings.max_upload_bytes:
+            refused.append({
+                "name": name,
+                "error": f"{len(payload) / 1_048_576:.1f}MB exceeds the "
+                         f"{settings.max_upload_bytes / 1_048_576:.0f}MB upload limit — "
+                         "copy it into the data directory instead",
+            })
+            continue
+        try:
+            target = import_bytes(name, payload)
+        except ValueError as exc:
+            refused.append({"name": name, "error": str(exc)})
+            continue
+        except OSError as exc:
+            refused.append({"name": name, "error": f"could not write file: {exc}"})
+            continue
+        imported.append({
+            "name": target.name,
+            "original_name": name,
+            "path": str(target),
+            "size_bytes": len(payload),
+        })
+
+    invalidate_cache()
+    report = import_report()
+    by_name = {f["name"]: f for f in report.get("files", [])}
+
+    enriched: list[dict] = []
+    for item in imported:
+        parsed = by_name.get(item["name"], {})
+        enriched.append({
+            **item,
+            "rows": parsed.get("rows", 0),
+            "observations": parsed.get("observations", 0),
+            "rejected": parsed.get("rejected", 0),
+            "mapped": parsed.get("mapped", {}),
+            "unmapped": parsed.get("unmapped", []),
+            "warnings": parsed.get("warnings", []),
+            "errors": parsed.get("errors", []),
+        })
+
+    # Persist to the durable store (Supabase/PostgreSQL when configured):
+    # upsert on observation_id, so re-uploading the same rows updates them
+    # instead of duplicating them. A database failure never loses the import —
+    # the files are already on disk and keep serving the dashboard.
+    persistence = None
+    if imported:
+        from ..custom_data import get_custom_dataset
+        from ..persist import persist_observations
+
+        ds = get_custom_dataset()
+        names = {item["name"] for item in imported}
+        fresh = [
+            o for o in (ds.observations if ds else [])
+            if any(name in (o.raw_payload_reference or "") for name in names)
+        ]
+        if fresh:
+            # Group by the name the user uploaded under: re-uploading "fares.csv"
+            # (which lands as fares_1.csv) must replace what it wrote last time.
+            by_label: dict[str, list] = {}
+            for item in imported:
+                by_label.setdefault(item["original_name"], []).append(item["name"])
+            reports = []
+            for label, disk_names in by_label.items():
+                rows = [o for o in fresh
+                        if any(n in (o.raw_payload_reference or "") for n in disk_names)]
+                if rows:
+                    reports.append(persist_observations(
+                        rows, label=label, basket=set(ds.route_meta) if ds else None,
+                    ))
+            persistence = _merge_persistence(reports)
+
+    return {"imported": enriched, "refused": refused, "persistence": persistence, "report": report}
+
+
+@router.delete("/data/files/{name}", response_model=schemas.CustomDataReport)
+def delete_data_file(name: str) -> dict:
+    """Remove one imported file and rescan (the dashboard's Import screen)."""
+    from ..custom_data import import_report, invalidate_cache, remove_file
+
+    try:
+        remove_file(name)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except OSError as exc:
+        raise HTTPException(status_code=500, detail=f"could not delete {name}: {exc}")
     invalidate_cache()
     return import_report()
 

@@ -16,6 +16,10 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 os.environ["APIX_DATA_DIR"] = tempfile.mkdtemp(prefix="apix-tests-")
+# The suite must not read whatever the developer (or the user) has dropped in
+# the data directory — custom data is a first-class input now, so tests get an
+# empty one and exercise the synthetic dataset unless a test says otherwise.
+os.environ["APIX_CUSTOM_DATA_DIR"] = tempfile.mkdtemp(prefix="apix-custom-tests-")
 os.environ["APIX_COLLECTOR_ENABLED"] = "0"
 os.environ["APIX_COLLECTOR_SOURCES"] = ""
 os.environ["APIX_DEMO_MODE"] = "1"

@@ -92,6 +92,11 @@ class Settings:
     # the source to the synthetic store) the demo generator serves the dashboard.
     custom_data_enabled: bool = _env_bool("APIX_CUSTOM_DATA", "1")
 
+    # Max size of a single uploaded file (POST /api/data/upload). Note that a
+    # serverless platform caps the request body well below this (Vercel: 4.5MB),
+    # so larger exports still have to go in through the data directory or the CLI.
+    max_upload_bytes: int = int(_env("APIX_MAX_UPLOAD_BYTES", str(25 * 1024 * 1024)))
+
     # Prefix for the REST API (the SPA is served by Vite in dev and proxied).
     api_prefix: str = "/api"
 

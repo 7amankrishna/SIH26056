@@ -399,3 +399,93 @@ def test_disabled_by_env(tmp_path, monkeypatch):
     report = import_report()
     assert report["enabled"] is False
     assert report["active"] is False
+
+
+# --------------------------------------------------------------------------- #
+# HTTP surface: upload / delete (what the Import screen talks to)
+# --------------------------------------------------------------------------- #
+
+@pytest.fixture(scope="module")
+def api_client(tmp_path_factory):
+    """A TestClient whose data directory is a throwaway folder."""
+    import os
+
+    os.environ["APIX_CUSTOM_DATA_DIR"] = str(tmp_path_factory.mktemp("apix-upload"))
+    os.environ["APIX_COLLECTOR_ENABLED"] = "0"
+    os.environ["APIX_COLLECTOR_SOURCES"] = ""
+    from fastapi.testclient import TestClient
+
+    from app.main import app
+
+    with TestClient(app) as c:
+        yield c
+    invalidate_cache()
+
+
+def _upload(client, name="fares.csv", content=None):
+    body = content if content is not None else CSV.encode("utf-8")
+    return client.post("/api/data/upload", files=[("files", (name, body, "text/csv"))])
+
+
+def test_upload_endpoint_imports_and_reports(api_client):
+    r = _upload(api_client)
+    assert r.status_code == 200
+    body = r.json()
+    assert body["imported"][0]["observations"] == 5
+    assert body["imported"][0]["errors"] == []
+    # the column mapping is echoed back so the UI can show it
+    assert body["imported"][0]["mapped"]["total_fare"] == "Cheapest Fare (INR)"
+    assert body["report"]["origin"] == "custom"
+    assert body["report"]["totals"]["observations"] == 5
+
+
+def test_upload_refuses_unsupported_types_without_aborting(api_client):
+    r = api_client.post(
+        "/api/data/upload",
+        files=[
+            ("files", ("ok.csv", CSV.encode("utf-8"), "text/csv")),
+            ("files", ("payload.exe", b"MZ\x00", "application/octet-stream")),
+        ],
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert len(body["imported"]) == 1
+    assert body["refused"][0]["name"] == "payload.exe"
+    assert "unsupported file type" in body["refused"][0]["error"]
+
+
+def test_upload_never_writes_outside_the_data_dir(api_client):
+    """A traversal filename is sanitised away, not obeyed."""
+    r = api_client.post(
+        "/api/data/upload",
+        files=[("files", ("../../escape.csv", CSV.encode("utf-8"), "text/csv"))],
+    )
+    body = r.json()
+    names = [f["name"] for f in body["imported"]]
+    assert names == ["escape.csv"], names          # directories stripped
+    root = Path(body["report"]["data_dir"]).resolve()
+    assert (root / "escape.csv").is_file()
+    assert not (root.parent / "escape.csv").exists()
+    assert not (root.parent.parent / "escape.csv").exists()
+
+
+def test_reuploading_does_not_clobber(api_client):
+    first = _upload(api_client, "same.csv").json()["imported"][0]["name"]
+    second = _upload(api_client, "same.csv").json()["imported"][0]["name"]
+    assert first == "same.csv"
+    assert second == "same_1.csv"
+
+
+def test_delete_endpoint_removes_the_file(api_client):
+    name = _upload(api_client, "removable.csv").json()["imported"][0]["name"]
+    r = api_client.delete(f"/api/data/files/{name}")
+    assert r.status_code == 200
+    assert name not in [f["name"] for f in r.json()["files"]]
+
+    missing = api_client.delete("/api/data/files/does_not_exist.csv")
+    assert missing.status_code == 404
+
+
+def test_delete_refuses_path_traversal(api_client):
+    r = api_client.delete("/api/data/files/..%2F..%2Fetc%2Fpasswd")
+    assert r.status_code in (400, 404)

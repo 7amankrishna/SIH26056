@@ -7,6 +7,7 @@
 //   custom — the user's own imported files (this is real data, not a demo)
 //   live   — fares the collection engine actually scraped
 
+import { Link } from "react-router-dom";
 import { Database, FlaskConical, Radio } from "lucide-react";
 import { useDataSource } from "../hooks/useDataSource";
 import { useOverview } from "../hooks/useApi";
@@ -14,13 +15,16 @@ import { useOverview } from "../hooks/useApi";
 export function DemoBadge({ show = true }: { show?: boolean }) {
   if (!show) return null;
   return (
-    <span
-      className="chip border border-amber-200 bg-amber-50 text-amber-700"
-      title="Deterministic synthetic dataset for offline demo"
+    // Clicking through to the import screen: the badge is the honest way to say
+    // "these numbers are synthetic", so it should also say how to change that.
+    <Link
+      to="/import"
+      className="chip border border-amber-200 bg-amber-50 text-amber-700 transition-colors hover:bg-amber-100"
+      title="Deterministic synthetic dataset for offline demo — click to import your own data"
     >
       <FlaskConical className="h-3 w-3" />
       DEMO DATA
-    </span>
+    </Link>
   );
 }
 

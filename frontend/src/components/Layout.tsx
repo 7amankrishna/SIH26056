@@ -17,6 +17,7 @@ import {
   Radar,
   Route,
   TrendingUp,
+  Upload,
   X,
 } from "lucide-react";
 import { DataModeBadge } from "./DemoBadge";
@@ -41,6 +42,7 @@ const NAV_SECTIONS = [
   {
     title: "Operations",
     items: [
+      { to: "/import", label: "Import Data", icon: Upload },
       { to: "/collection", label: "Collection Monitor", icon: Radar },
       { to: "/api", label: "API / Data Access", icon: Activity },
     ],

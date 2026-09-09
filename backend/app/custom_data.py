@@ -43,11 +43,11 @@ from __future__ import annotations
 
 import csv
 import datetime as dt
+import hashlib
 import io
 import json
 import random
 import re
-import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterable, Optional
@@ -832,6 +832,54 @@ def _resolve_route(row: dict, canonical: dict[str, str]) -> Optional[tuple[str, 
     return f"{pair[0]}-{pair[1]}", pair[0], pair[1]
 
 
+def _stable_observation_id(
+    row: dict,
+    canonical: dict[str, str],
+    data_file: "DataFile",
+    index: int,
+    seen_ids: dict[str, int],
+    date_format: Optional[str] = None,
+) -> str:
+    """An id that survives re-uploading the same rows.
+
+    Two rules, in order:
+
+    1. If the file has an id column, use it — that is the user's own key and the
+       one they expect de-duplication on ("each has id").
+    2. Otherwise derive the id from the row's *content*
+       (route + dates + airline + flight + class + lead + fare) — never from the
+       file name or row number, so uploading the same export twice lands on the
+       same ids and the database upsert updates those rows instead of inserting
+       copies.
+
+    Rows that are byte-identical within one file still need distinct ids, so a
+    repeat gets a deterministic ``-2``, ``-3`` … suffix.
+    """
+    provided = _clean(_get(row, canonical, "observation_id"))
+    if provided:
+        base = provided
+    else:
+        total = _to_float(_get(row, canonical, "total_fare")) or 0.0
+        key = "|".join(
+            str(part)
+            for part in (
+                _clean(_get(row, canonical, "route")).upper(),
+                _to_date(_get(row, canonical, "collection_date"), date_format),
+                _to_date(_get(row, canonical, "departure_date"), date_format),
+                _clean(_get(row, canonical, "airline")).upper(),
+                _clean(_get(row, canonical, "flight_number")).upper(),
+                _clean(_get(row, canonical, "fare_class")).upper(),
+                _to_int(_get(row, canonical, "lead_time_days")),
+                round(total, 0),
+            )
+        )
+        digest = hashlib.sha1(key.encode("utf-8")).hexdigest()[:12]
+        base = f"obs-{digest}"
+
+    seen_ids[base] = seen_ids.get(base, 0) + 1
+    return base if seen_ids[base] == 1 else f"{base}-{seen_ids[base]}"
+
+
 def build_observations(
     rows: list[dict],
     headers: list[str],
@@ -879,6 +927,8 @@ def build_observations(
     missing_route = 0
     missing_fare = 0
     warned: set[str] = set()
+    #: base id -> how many times it has been used in this file
+    seen_ids: dict[str, int] = {}
 
     def warn_once(message: str) -> None:
         if message not in warned:
@@ -966,8 +1016,9 @@ def build_observations(
             if status_col_value is not None:
                 quality_status = status_col_value
 
-        observation_id = _clean(_get(row, canonical, "observation_id")) or \
-            f"{_slug(data_file.path.stem)}-{index + 1:06d}"
+        observation_id = _stable_observation_id(
+            row, canonical, data_file, index, seen_ids, date_format
+        )
 
         timestamp = _to_iso_time(_get(row, canonical, "collection_timestamp"))
         if timestamp is None:
@@ -1628,6 +1679,83 @@ def has_custom_data() -> bool:
 # CLI:  python -m app.custom_data [paths...]
 # --------------------------------------------------------------------------- #
 
+def _safe_filename(name: str) -> str:
+    """Strip any directory component and anything that is not file-name safe.
+
+    Uploads come from the browser, so a name like ``../../etc/passwd`` or
+    ``C:\\secrets\\faress.csv`` must never be used to pick a path.
+    """
+    base = _clean(name).replace("\\", "/").split("/")[-1]
+    base = base.split("?")[0].strip()
+    base = re.sub(r"[^A-Za-z0-9._-]", "_", base).lstrip(".")
+    if not base:
+        base = "import.csv"
+    if not Path(base).suffix:
+        base += ".csv"
+    return base
+
+
+def _next_free_path(root: Path, filename: str, overwrite: bool = False) -> Path:
+    target = root / filename
+    if not target.exists() or overwrite:
+        return target
+    # Never clobber: append a counter so every import stays recoverable.
+    stem, suffix, n = Path(filename).stem, Path(filename).suffix, 1
+    while target.exists():
+        target = root / f"{stem}_{n}{suffix}"
+        n += 1
+    return target
+
+
+def import_bytes(filename: str, payload: bytes, *, root: Optional[Path] = None,
+                 overwrite: bool = False) -> Path:
+    """Write an uploaded export into the data directory.
+
+    Used by ``POST /api/data/upload`` (and by the CLI), so the browser and the
+    shell share one code path — including the "never overwrite" rule.
+    """
+    suffix = Path(filename).suffix.lower()
+    if suffix not in SUPPORTED_SUFFIXES:
+        raise ValueError(
+            f"unsupported file type '{suffix or filename}'. Convert to CSV, or use one of: "
+            + ", ".join(sorted(SUPPORTED_SUFFIXES))
+        )
+    root = Path(root) if root else data_root()
+    root.mkdir(parents=True, exist_ok=True)
+    target = _next_free_path(root, _safe_filename(filename), overwrite=overwrite)
+    if not str(target.resolve()).startswith(str(root.resolve())):
+        raise ValueError("refusing to write outside the data directory")
+    target.write_bytes(payload)
+    invalidate_cache()
+    return target
+
+
+def remove_file(name: str, root: Optional[Path] = None) -> Path:
+    """Delete one imported file (from the dashboard's Import screen)."""
+    root = Path(root) if root else data_root()
+    target = (root / _safe_filename(name)).resolve()
+    if root.resolve() != target.parent and root.resolve() not in target.parents:
+        raise ValueError("refusing to delete outside the data directory")
+    if not target.is_file():
+        raise FileNotFoundError(f"no such imported file: {name}")
+    target.unlink()
+    invalidate_cache()
+    return target
+
+
+def writable(root: Optional[Path] = None) -> tuple[bool, Optional[str]]:
+    """Can the dashboard actually accept uploads here? (serverless may not)."""
+    root = Path(root) if root else data_root()
+    try:
+        root.mkdir(parents=True, exist_ok=True)
+        probe = root / ".apix-write-probe"
+        probe.write_text("ok", encoding="utf-8")
+        probe.unlink()
+        return True, None
+    except OSError as exc:
+        return False, f"{root} is not writable ({exc.__class__.__name__})"
+
+
 def import_file(src: str | Path, *, name: Optional[str] = None, root: Optional[Path] = None,
                 overwrite: bool = False) -> Path:
     """Copy an attached export into the data directory and validate it.
@@ -1638,23 +1766,8 @@ def import_file(src: str | Path, *, name: Optional[str] = None, root: Optional[P
     src_path = Path(src).expanduser().resolve()
     if not src_path.is_file():
         raise FileNotFoundError(f"no such file: {src_path}")
-    if src_path.suffix.lower() not in SUPPORTED_SUFFIXES:
-        raise ValueError(
-            f"unsupported file type '{src_path.suffix}'. Convert to CSV, or one of: "
-            + ", ".join(sorted(SUPPORTED_SUFFIXES))
-        )
-    root = Path(root) if root else data_root()
-    root.mkdir(parents=True, exist_ok=True)
-    target = root / (name or src_path.name)
-    if target.exists() and not overwrite:
-        # Never clobber: append a counter so every import is recoverable.
-        stem, suffix, n = target.stem, target.suffix, 1
-        while target.exists():
-            target = root / f"{stem}_{n}{suffix}"
-            n += 1
-    shutil.copy2(src_path, target)
-    invalidate_cache()
-    return target
+    return import_bytes(name or src_path.name, src_path.read_bytes(),
+                        root=root, overwrite=overwrite)
 
 
 def _main(argv: Optional[list[str]] = None) -> int:

@@ -5,7 +5,10 @@ import type {
   AirlineSummary,
   CollectStatus,
   CustomDataReport,
+  DatabaseStatus,
   DataSourceState,
+  PersistenceReport,
+  UploadResponse,
   DataMode,
   SweepAccepted,
   SweepResult,
@@ -77,6 +80,20 @@ export const api = {
   dataFiles: () => request<CustomDataReport>("/data/files"),
   reloadDataFiles: () =>
     request<CustomDataReport>("/data/reload", { method: "POST" }),
+  /** Multipart upload — no JSON body, so the browser sets the boundary itself. */
+  uploadDataFiles: (files: File[]) => {
+    const form = new FormData();
+    files.forEach((f) => form.append("files", f, f.name));
+    return request<UploadResponse>("/data/upload", { method: "POST", body: form });
+  },
+  deleteDataFile: (name: string) =>
+    request<CustomDataReport>(`/data/files/${encodeURIComponent(name)}`, { method: "DELETE" }),
+  /** Health of the durable store (Supabase/PostgreSQL) — never the DSN itself. */
+  databaseStatus: () => request<DatabaseStatus>("/data/database"),
+  persistDataFiles: (file?: string) =>
+    request<PersistenceReport>(`/data/persist${file ? `?file=${encodeURIComponent(file)}` : ""}`, {
+      method: "POST",
+    }),
 
   collectionRuns: () => request<CollectionRuns>("/collection-runs"),
   provenance: (indexId: string) =>

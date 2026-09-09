@@ -423,3 +423,53 @@ export interface CustomDataReport {
   weight_basis: string;
   notes: string[];
 }
+
+export interface UploadedFileReport {
+  name: string;
+  path: string;
+  rows: number;
+  observations: number;
+  rejected: number;
+  mapped: Record<string, string>;
+  unmapped: string[];
+  warnings: string[];
+  errors: string[];
+  size_bytes: number;
+}
+
+export interface UploadResponse {
+  imported: UploadedFileReport[];
+  refused: { name: string; error: string }[];
+  persistence: PersistenceReport | null;
+  report: CustomDataReport | null;
+}
+
+export interface PersistenceReport {
+  persisted: boolean;
+  backend: string | null;
+  durable?: boolean | null;
+  run_id: string | null;
+  inserted: number;
+  updated: number;
+  replaced: number;
+  total: number;
+  error: string | null;
+  note?: string | null;
+}
+
+export interface DatabaseStatus {
+  configured: boolean;
+  available: boolean;
+  backend: string | null;
+  durable?: boolean | null;
+  ephemeral?: boolean | null;
+  ignores_database_url?: boolean | null;
+  reason: string | null;
+  note: string | null;
+  counts: {
+    observations?: number;
+    valid_observations?: number;
+    days_collected?: number;
+    by_status?: Record<string, number>;
+  };
+}

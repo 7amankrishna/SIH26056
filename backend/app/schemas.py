@@ -271,6 +271,61 @@ class CustomDataReport(ApxModel):
     notes: list[str] = Field(default_factory=list)
 
 
+class UploadedFileReport(ApxModel):
+    """Result of importing one uploaded file."""
+
+    name: str
+    path: str
+    rows: int = 0
+    observations: int = 0
+    rejected: int = 0
+    mapped: dict[str, str] = Field(default_factory=dict)
+    unmapped: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    errors: list[str] = Field(default_factory=list)
+    size_bytes: int = 0
+
+
+class PersistenceReport(ApxModel):
+    """What happened to an import on its way into the database."""
+
+    persisted: bool = False
+    backend: Optional[str] = None
+    durable: Optional[bool] = None
+    run_id: Optional[str] = None
+    inserted: int = 0
+    updated: int = 0
+    #: rows the previous import of this file wrote, removed before re-importing
+    replaced: int = 0
+    total: int = 0
+    error: Optional[str] = None
+    note: Optional[str] = None
+
+
+class DatabaseStatus(ApxModel):
+    """Whether the dashboard can persist imports, and what is already stored."""
+
+    configured: bool = False
+    available: bool = False
+    backend: Optional[str] = None
+    durable: Optional[bool] = None
+    ephemeral: Optional[bool] = None
+    ignores_database_url: Optional[bool] = None
+    reason: Optional[str] = None
+    note: Optional[str] = None
+    counts: dict[str, Any] = Field(default_factory=dict)
+
+
+class UploadResponse(ApxModel):
+    """Outcome of a multi-file upload: what landed, what was refused, whether it
+    reached the database, and the resulting state of the data directory."""
+
+    imported: list[UploadedFileReport] = Field(default_factory=list)
+    refused: list[dict[str, str]] = Field(default_factory=list)
+    persistence: Optional[PersistenceReport] = None
+    report: Optional[CustomDataReport] = None
+
+
 class DataSourceState(ApxModel):
     """What the dashboard is currently serving: scraped data or demo data."""
 

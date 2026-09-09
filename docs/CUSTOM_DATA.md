@@ -31,6 +31,39 @@ screen works unchanged**: overview KPIs, index trend, route table, heatmap,
 airline comparison, lead-time curve, fare distribution, quality breakdown,
 rejected-rows audit, provenance drill-down and the collection monitor.
 
+### Persisting to your database (Supabase)
+
+Every upload is written to the durable store — **Supabase/PostgreSQL** when
+configured, SQLite locally — into the same ``observations`` table the collection
+engine uses, matched on ``observation_id``:
+
+| Situation | What happens |
+| --- | --- |
+| Row id is new | **inserted** |
+| Row id already exists | **updated in place** (a corrected fare replaces the old value) |
+| File re-uploaded, rows no longer in it | superseded rows from that file's previous import are **removed** |
+
+Re-uploading the same export therefore updates your table instead of growing it.
+Where an id comes from:
+
+1. your file's ``observation_id`` column (preferred — this is *your* key);
+2. otherwise a hash of the row's content (route + dates + airline + flight +
+   class + lead + fare), never the file name or row number, so the same rows
+   uploaded under a different name still land on the same id.
+
+Each import is recorded in ``collection_runs`` with ``trigger='import'``, so you
+can see in Supabase exactly what each upload wrote. Once the rows are in,
+switching the dashboard to **live** serves the index straight from your database.
+
+Endpoints: ``GET /api/data/database`` (health + counts, never the DSN),
+``POST /api/data/persist`` (push whatever is loaded now). The Import screen shows
+the connection state and the insert/update/replace counts per upload; if no
+database is configured it says so and keeps serving the files from disk.
+
+Credentials are read from the environment (``DATABASE_URL``, plus
+``APIX_IGNORE_DATABASE_URL=0`` on Vercel) — never from a request, never logged,
+never echoed in an API response. See `docs/DEPLOYMENT.md`.
+
 ### Precedence
 
 | Priority | Origin | Condition |
@@ -41,6 +74,20 @@ rejected-rows audit, provenance drill-down and the collection monitor.
 
 Live falls through to custom/demo rather than rendering an empty dashboard.
 Set `APIX_CUSTOM_DATA=0` or `APIX_DATA_MODE=demo` to force the synthetic store.
+
+### Getting the files in
+
+| Route | Use it when |
+| --- | --- |
+| **Dashboard → Import Data** (drag & drop) | the normal path — `POST /api/data/upload` |
+| Drop the file into `data/` | you have shell/volume access, or the file is large |
+| `python -m app.custom_data --import FILE` | scripting the handover |
+
+All three end in the same place: the file is written into the data directory
+(never overwriting — a repeat becomes `fares_1.csv`), the cache is invalidated,
+and the next request rebuilds the dataset. The upload endpoint refuses
+unsupported types and sanitises filenames, so `../../etc/passwd` cannot write
+outside the directory. `DELETE /api/data/files/{name}` removes a file again.
 
 ### Caching
 
@@ -158,6 +205,8 @@ airline + flight + fare), so a repeat import cannot double the index.
 ```bash
 curl -s localhost:8000/api/data/files | jq '.totals, .files[].mapped'
 curl -s -X POST localhost:8000/api/data/reload   # force a rescan
+curl -s -X POST localhost:8000/api/data/upload -F "files=@my_fares.csv"
+curl -s -X DELETE localhost:8000/api/data/files/my_fares.csv
 ```
 
 The dashboard badge reads `YOUR DATA · N files` while custom data is served, and
@@ -176,7 +225,12 @@ skipped rows, newly registered routes) until dismissed.
   no FX conversion happens.
 * **Serverless is read-only.** On Vercel the files must ship with the build
   (`vercel.json` includes `data/**`, and `.vercelignore` re-includes it after its
-  blanket `*.csv` rule); the loader only ever reads them.
+  blanket `*.csv` rule); the loader only ever reads them. Uploads there write to
+  the ephemeral `/tmp`-style filesystem and vanish on the next deploy, and the
+  platform's request-body cap (Vercel: 4.5MB) applies to `POST /api/data/upload`.
+* **Re-uploads are not de-duplicated across files.** Two files with different
+  names are treated as two sources, so importing the same rows twice under
+  different names counts them twice. Delete the older copy instead.
 * **No interpolation.** Missing route-days stay missing rather than being filled
   in; the index simply has gaps.
 * **Quality rules are statistical, not adjudicated.** A fare flagged

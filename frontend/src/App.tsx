@@ -9,6 +9,7 @@ import Airlines from "./pages/Airlines";
 import LeadTime from "./pages/LeadTime";
 import CollectionMonitor from "./pages/CollectionMonitor";
 import APIPage from "./pages/APIPage";
+import ImportData from "./pages/ImportData";
 
 export default function App() {
   return (
@@ -22,6 +23,7 @@ export default function App() {
             <Route path="/airlines" element={<Airlines />} />
             <Route path="/lead-time" element={<LeadTime />} />
             <Route path="/collection" element={<CollectionMonitor />} />
+            <Route path="/import" element={<ImportData />} />
             <Route path="/api" element={<APIPage />} />
           </Route>
         </RouterRoutes>

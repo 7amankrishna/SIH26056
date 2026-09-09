@@ -182,6 +182,10 @@ Backend (prefix `APIX_`):
   filesystem is read-only outside `/tmp`, so on Vercel ship the files with the
   build (they are read, never written) or set this to a bundled path.
 - `APIX_CUSTOM_DATA` — default `1`. `0` disables custom-data loading.
+- Uploaded/imported rows are upserted into the same `observations` table the
+  collector uses, matched on `observation_id` (see `docs/CUSTOM_DATA.md`). Set
+  `DATABASE_URL` — and `APIX_IGNORE_DATABASE_URL=0` on Vercel — for that to be
+  Supabase; without it the import still works but is only stored on disk.
 - `APIX_DATA_MODE` — `demo` pins the dashboard to the synthetic dataset (custom
   files are ignored), `live` pins it to scraped data.
 - `APIX_IGNORE_DATABASE_URL` — defaults to `1` on Vercel (`VERCEL` or

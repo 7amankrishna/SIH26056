@@ -3,6 +3,7 @@ uvicorn[standard]==0.32.1
 pydantic==2.10.4
 pydantic-settings==2.7.0
 httpx==0.28.1
+python-multipart==0.0.20   # required by POST /api/data/upload (file uploads)
 pytest==8.3.4
 psycopg2-binary==2.9.10
 # Optional: read .xlsx/.xlsm fare exports straight from the data directory.
