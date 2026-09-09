@@ -52,6 +52,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
   // Re-resolve when the OS preference flips while in "system".
   useEffect(() => {
+    if (typeof window.matchMedia !== "function") return;
     const mq = window.matchMedia("(prefers-color-scheme: dark)");
     const onChange = () => {
       if (readStored() === "system") setResolved(apply("system"));
