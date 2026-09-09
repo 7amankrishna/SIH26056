@@ -165,7 +165,7 @@ export function Layout() {
       </a>
 
       {/* Desktop sidebar */}
-      <aside className="sidebar-surface hidden w-64 shrink-0 flex-col lg:flex">
+      <aside className="sidebar-surface sticky top-0 z-20 hidden h-screen w-64 shrink-0 flex-col lg:flex">
         <SidebarContent />
       </aside>
 
