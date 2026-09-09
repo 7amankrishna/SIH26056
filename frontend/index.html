@@ -8,12 +8,29 @@
       name="description"
       content="APIx — high-frequency airfare intelligence for CPI augmentation. Collection · Normalization · Quality · Index · Audit."
     />
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"
-      rel="stylesheet"
+    <meta property="og:title" content="APIx · Real-Time Airfare Price Index for India" />
+    <meta
+      property="og:description"
+      content="High-frequency airfare intelligence for CPI augmentation — collection, normalization, quality, index and audit."
     />
+    <meta property="og:type" content="website" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+
+    <!-- Set the theme class before first paint: no white flash in dark mode. -->
+    <script>
+      (function () {
+        try {
+          var stored = localStorage.getItem("apix-theme");
+          var mode = stored === "light" || stored === "dark" || stored === "system" ? stored : "system";
+          var dark = mode === "dark" || (mode === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+          if (dark) document.documentElement.classList.add("dark");
+        } catch (e) {
+          /* no-op */
+        }
+      })();
+    </script>
+    <meta name="theme-color" content="#f1f5f9" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#0a0a0b" media="(prefers-color-scheme: dark)" />
   </head>
   <body>
     <div id="root"></div>
