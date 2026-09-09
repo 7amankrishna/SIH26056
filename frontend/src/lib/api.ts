@@ -17,6 +17,7 @@ import type {
   FaresResponse,
   Health,
   LeadTime,
+  Methodology,
   Overview,
   Provenance,
   Quality,
@@ -29,21 +30,35 @@ import type {
 const BASE = "/api";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  // Merge, never replace: POSTs need Content-Type while Accept stays on every
-  // call so a JSON error body is returned by the API rather than an HTML 406.
+  // Do not let an old browser response mask a fresh deployment/API error. The
+  // app has no offline mode, so a no-store request is safer than serving a
+  // stale JSON shape after a deploy.
   const res = await fetch(`${BASE}${path}`, {
     ...init,
-    headers: { Accept: "application/json", ...(init?.headers ?? {}) },
+    cache: "no-store",
+    headers: {
+      Accept: "application/json",
+      "Cache-Control": "no-cache",
+      ...(init?.headers ?? {}),
+    },
   });
+  // Test doubles and a few older proxies omit the header; successful responses
+  // without a content type retain the historic JSON assumption.
+  const contentType = res.headers?.get?.("content-type");
+  const isJson = !contentType || contentType.includes("application/json");
   if (!res.ok) {
     let detail = `Request failed (${res.status})`;
     try {
-      const body = await res.json();
+      const body = isJson ? await res.json() : null;
       if (body?.detail) detail = body.detail;
+      else if (!isJson) detail = `Request failed (${res.status}): the server returned an unexpected non-JSON response.`;
     } catch {
-      /* ignore */
+      /* preserve the useful HTTP status */
     }
     throw new Error(detail);
+  }
+  if (!isJson) {
+    throw new Error("The API returned an unexpected non-JSON response. Reload the application to fetch the current deployment.");
   }
   return res.json() as Promise<T>;
 }
@@ -94,7 +109,10 @@ export const api = {
     request<PersistenceReport>(`/data/persist${file ? `?file=${encodeURIComponent(file)}` : ""}`, {
       method: "POST",
     }),
+  /** Seed the deterministic built-in demo observations directly into the store. */
+  persistDemoData: () => request<PersistenceReport>("/data/persist-demo", { method: "POST" }),
 
+  methodology: () => request<Methodology>("/methodology"),
   collectionRuns: () => request<CollectionRuns>("/collection-runs"),
   provenance: (indexId: string) =>
     request<Provenance>(`/provenance/${encodeURIComponent(indexId)}`),

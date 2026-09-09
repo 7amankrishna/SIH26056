@@ -1,6 +1,11 @@
+# Vercel API function dependencies. Keep in sync with the runtime subset of
+# backend/requirements.txt: uploads, PostgreSQL persistence and Excel imports
+# all execute inside api/index.py.
 fastapi==0.115.6
 uvicorn[standard]==0.32.1
 pydantic==2.10.4
 pydantic-settings==2.7.0
 httpx==0.28.1
+python-multipart==0.0.20
 psycopg2-binary==2.9.10
+openpyxl==3.1.5

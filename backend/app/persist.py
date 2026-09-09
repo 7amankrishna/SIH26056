@@ -12,7 +12,7 @@ de-duplication key:
 
 Credentials are never handled here and never logged: the store reads
 ``DATABASE_URL`` from the environment, exactly as the collection engine does
-(see docs/DEPLOYMENT.md — ``APIX_IGNORE_DATABASE_URL=0`` on Vercel).
+(see docs/DEPLOYMENT.md — a configured ``DATABASE_URL`` is honoured on Vercel unless ``APIX_IGNORE_DATABASE_URL=1``).
 
 Once rows are in that table they are ordinary stored observations: switching the
 dashboard to *live* serves the index straight out of your database.
@@ -151,8 +151,8 @@ def persist_observations(
             "backend": status.get("backend"),
             "run_id": None,
             "error": status.get("reason")
-            or "No usable collection store. Set DATABASE_URL (and APIX_IGNORE_DATABASE_URL=0 "
-               "on Vercel) to persist imports to PostgreSQL — see docs/DEPLOYMENT.md.",
+            or "No usable collection store. Set DATABASE_URL (and ensure APIX_IGNORE_DATABASE_URL "
+               "is not 1) to persist imports to PostgreSQL — see docs/DEPLOYMENT.md.",
             "note": status.get("note"),
         }
 

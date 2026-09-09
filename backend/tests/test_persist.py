@@ -230,6 +230,18 @@ def test_persist_endpoint_pushes_loaded_files(client):
     assert body["total"] >= 1
 
 
+def test_persist_demo_endpoint_seeds_the_store_without_an_uploaded_file(client):
+    """The built-in demo seed bypasses the browser-upload filesystem entirely."""
+    before = client.get("/api/data/database").json()["counts"]["observations"]
+    r = client.post("/api/data/persist-demo")
+    assert r.status_code == 200
+    report = r.json()
+    assert report["persisted"] is True
+    assert report["total"] > 1_000
+    after = client.get("/api/data/database").json()["counts"]["observations"]
+    assert after >= before + report["inserted"]
+
+
 def test_persist_endpoint_without_data_is_404(client, monkeypatch):
     import app.custom_data as custom_data
 

@@ -82,11 +82,19 @@ class Settings:
     # Custom data (the user's own fare exports replace the demo dataset)
     # ------------------------------------------------------------------ #
 
-    # Directory scanned for the user's own data files (CSV/JSON/JSONL). Every
-    # supported file in it is loaded and merged, so more data = drop a file in.
+    # Directory scanned for shipped/operator-managed fare files (CSV/JSON/JSONL).
     # Default: <repo>/data (committed, unlike backend/data which is runtime state).
+    # On Vercel this is bundled at /var/task/data and is intentionally read-only.
     custom_data_dir: Path = Path(_env("APIX_CUSTOM_DATA_DIR", "").strip()
                                  or str(Path(__file__).resolve().parents[2] / "data"))
+
+    # Browser uploads use a different directory from ``custom_data_dir`` when
+    # that directory is deployment-managed/read-only. This is crucial on Vercel:
+    # bundled sample files can still be read from /var/task/data, while uploads
+    # land in /tmp and can immediately be parsed and persisted to PostgreSQL.
+    # Set this explicitly for a durable shared upload volume in a container/VM.
+    upload_data_dir: Path = Path(_env("APIX_UPLOAD_DATA_DIR", "").strip()
+                                 or _default_data_dir()) / "imports"
 
     # Master switch for custom data. When off (or when APIX_DATA_MODE=demo pins
     # the source to the synthetic store) the demo generator serves the dashboard.

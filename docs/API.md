@@ -38,10 +38,11 @@ consumer.
 | `GET` | `/stats/overview` | Validation / backtest summary. |
 | `GET` | `/data/files` | Provenance for imported data: every file in the data directory, rows in/observations/rejects, which of your columns mapped to which canonical field, unmapped columns, warnings and errors. |
 | `POST` | `/data/reload` | Rescan the data directory now (the loader normally notices changed files on its own). Returns the same report. |
-| `POST` | `/data/upload` | Multipart upload (`files`) of CSV/TSV/JSON/JSONL/XLSX fare exports into the data directory. Returns what was imported (rows, column mapping, rejects) and what was refused with a reason. Never overwrites an existing file. |
+| `POST` | `/data/upload` | Multipart upload (`files`) of CSV/TSV/JSON/JSONL/XLSX fare exports. Returns what was imported (rows, column mapping, rejects), safe upload-storage diagnostics and any refused file. On serverless, files are staged under writable `/tmp`, not the read-only bundled data directory. Never overwrites an existing file. |
 | `DELETE` | `/data/files/{name}` | Delete one imported file and rescan. `404` when it does not exist; `400` for a name that escapes the directory. |
 | `GET` | `/data/database` | Health of the durable store (Supabase/PostgreSQL) and the observation counts. Never returns the connection string. |
 | `POST` | `/data/persist` | Upsert every loaded observation into that store, matched on `observation_id`. Optional `?file=` limits it to one file's rows. `404` when nothing is loaded. |
+| `POST` | `/data/persist-demo` | Seed the deterministic built-in demo dataset directly into the configured store. Idempotent on stable `observation_id`; does not require a writable upload directory. |
 
 ### Collection engine (scraper)
 
@@ -103,10 +104,10 @@ Storage problems are reported, not crashed on:
 Every store description carries `backend` (`sqlite` / `postgresql` /
 `unavailable`), `durable`, `ephemeral`, `ignores_database_url` and a human-readable
 `note`, so a consumer can tell a durable collection history from a per-instance
-serverless one. Vercel defaults to `ignores_database_url: true`: the SQLite demo
-works even if `DATABASE_URL` is malformed or unreachable. Set
-`APIX_IGNORE_DATABASE_URL=0` to opt in to PostgreSQL; only then do database URL
-validation/connection failures apply. The note never includes the URL or credentials.
+serverless one. A configured `DATABASE_URL` is honoured on Vercel and selects
+PostgreSQL. Set `APIX_IGNORE_DATABASE_URL=1` only to intentionally force the
+SQLite fallback; database URL validation/connection failures are then avoided.
+The note never includes the URL or credentials.
 
 Full parameter and schema documentation is available in the OpenAPI schema at
 `/openapi.json` and the interactive `/docs`.

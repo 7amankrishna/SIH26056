@@ -106,7 +106,7 @@ describe("App render smoke test", () => {
     ["/routes", "Routes"],
     ["/airlines", "Airline Price Intelligence"],
     ["/lead-time", "Lead-Time Elasticity"],
-    ["/collection", "Collection Monitor"],
+    ["/methodology", "Index Methodology"],
     ["/api", "API / Data Access"],
   ])("renders %s without throwing", async (path, heading) => {
     const { unmount } = render(
@@ -120,6 +120,21 @@ describe("App render smoke test", () => {
     );
     expect(await screen.findByRole("heading", { name: heading }, { timeout: 2000 })).toBeInTheDocument();
     unmount();
+  });
+
+  it("removes retired dashboard pages from the navigation and recovers old links", async () => {
+    render(
+      <QueryClientProvider client={queryClient()}>
+        <ThemeProvider>
+          <MemoryRouter initialEntries={["/quality"]}>
+            <App />
+          </MemoryRouter>
+        </ThemeProvider>
+      </QueryClientProvider>,
+    );
+    expect(await screen.findByRole("heading", { name: "Overview" })).toBeInTheDocument();
+    expect(screen.queryByText("Data Quality")).not.toBeInTheDocument();
+    expect(screen.queryByText("Collection Monitor")).not.toBeInTheDocument();
   });
 
   it("keeps the document title in sync with the route", async () => {

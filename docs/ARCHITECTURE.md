@@ -23,7 +23,7 @@ while leaving a clean seam for real collection adapters.
      ↓
   FastAPI           (typed Pydantic responses)
      ↓
-  React dashboard   (Overview · Index · Routes · Airlines · Lead Time · Quality · Collection · Methodology · API)
+  React dashboard   (Overview · Index · Routes · Airlines · Lead Time · Import · Methodology · API)
 ```
 
 ## Services

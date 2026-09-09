@@ -12,7 +12,7 @@ Hard rules this contract exists to enforce (docs/SCRAPING_POLICY.md):
 * an adapter **cannot** report success while hiding a block — :meth:`collect`
   raises :class:`CollectionError` with ``kind="blocked"`` and the service records
   that as a failed run;
-* an adapter declares its ``compliance`` so the Collection Monitor can label it;
+* an adapter declares its ``compliance`` so collection-status responses can label it;
 * an adapter never retries a denial — backoff is the transport's job and the
   circuit breaker is the service's.
 """

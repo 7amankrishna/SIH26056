@@ -46,6 +46,7 @@ import datetime as dt
 import hashlib
 import io
 import json
+import os
 import random
 import re
 from dataclasses import dataclass, field
@@ -101,9 +102,68 @@ INDEX_ELIGIBLE = ("VALID", "SUSPICIOUS")
 
 
 def data_root() -> Path:
-    """Directory scanned for user data (``APIX_CUSTOM_DATA_DIR``)."""
+    """Directory scanned for shipped/operator-managed data (``APIX_CUSTOM_DATA_DIR``)."""
     explicit = getattr(settings, "custom_data_dir", None)
     return Path(explicit) if explicit else Path(__file__).resolve().parents[2] / "data"
+
+
+def _probe_writable(root: Path) -> tuple[bool, Optional[str]]:
+    """Check a directory without leaking deployment internals into a traceback."""
+    try:
+        root.mkdir(parents=True, exist_ok=True)
+        probe = root / ".apix-write-probe"
+        probe.write_text("ok", encoding="utf-8")
+        probe.unlink()
+        return True, None
+    except OSError as exc:
+        return False, f"{root} is not writable ({type(exc).__name__}: {exc})"
+
+
+def upload_root() -> Path:
+    """Writable landing zone for browser uploads.
+
+    A deployed package directory (for example ``/var/task/data`` on Vercel) is
+    a useful *read* source for bundled samples but cannot accept uploads. Keep
+    it as a scan root and use ``/tmp/apix-data/imports`` (or an explicit shared
+    ``APIX_UPLOAD_DATA_DIR``) as the write target instead. Locally, uploads keep
+    using the ordinary data directory so the command-line and browser workflows
+    stay identical.
+    """
+    explicit = os.getenv("APIX_UPLOAD_DATA_DIR", "").strip()
+    if explicit:
+        return Path(explicit)
+
+    primary = data_root()
+    # Request-scoped/serverless filesystems only guarantee /tmp is writable.
+    if getattr(settings, "request_scoped_runtime", False):
+        return Path(settings.upload_data_dir)
+
+    can_write, _ = _probe_writable(primary)
+    if can_write:
+        return primary
+    # This also handles Docker setups that intentionally mount ./data read-only.
+    return Path(settings.upload_data_dir)
+
+
+def data_roots(root: Optional[Path] = None) -> list[Path]:
+    """All roots that form the imported dataset, ordered by source priority.
+
+    ``root`` is intentionally single-root for callers/tests that request an
+    isolated scan. The default scan combines bundled/operator-managed files and
+    the writable browser-upload directory when they differ.
+    """
+    primary = Path(root) if root is not None else data_root()
+    if root is not None:
+        return [primary]
+    roots = [primary, upload_root()]
+    unique: list[Path] = []
+    seen: set[str] = set()
+    for item in roots:
+        marker = str(item.resolve()) if item.exists() else str(item.absolute())
+        if marker not in seen:
+            unique.append(item)
+            seen.add(marker)
+    return unique
 
 
 def is_enabled() -> bool:
@@ -1318,7 +1378,7 @@ def register_airlines(observations: list[Observation], airline_rows: list[dict])
 
 def register_sources(observations: list[Observation], source_rows: list[dict],
                      files: list[DataFile]) -> list[dict]:
-    """Register each source found in the data so the Collection Monitor is honest."""
+    """Register each source found in the data for consistent collection/audit metadata."""
     counts: dict[str, int] = {}
     valid_counts: dict[str, int] = {}
     last_day: dict[str, str] = {}
@@ -1461,6 +1521,8 @@ class CustomData:
         return {
             "enabled": is_enabled(),
             "data_dir": str(data_root()),
+            "data_dirs": [str(item) for item in data_roots()],
+            "upload": upload_diagnostics(),
             "active": ds is not None and bool(ds.observations),
             "origin": ds.origin if ds else "demo",
             "files": [f.as_dict() for f in self.files],
@@ -1492,20 +1554,36 @@ class CustomData:
 
 
 def build_custom_dataset(root: Optional[Path] = None) -> CustomData:
-    """Scan the data directory and build a :class:`Dataset` from what is there."""
-    root = Path(root) if root else data_root()
+    """Scan every active data root and build a :class:`Dataset` from the files.
+
+    On a serverless deployment that normally means a read-only bundled ``data/``
+    directory plus a writable ``/tmp/.../imports`` directory. Keeping both in
+    the scan is what lets an uploaded CSV be shown and persisted without trying
+    to modify the deployed package.
+    """
+    primary_root = Path(root) if root is not None else data_root()
+    roots = data_roots(root)
     reset_registrations()
-    config = load_config(root)
-    files = discover_files(
-        root,
-        include=config.get("include") or None,
-        exclude=config.get("exclude") or None,
-    )
+    # Configuration belongs to the operator-managed root. Browser uploads must
+    # not be able to smuggle a config.json that changes how all bundled data is
+    # interpreted.
+    config = load_config(primary_root)
+    files: list[DataFile] = []
+    for scan_root in roots:
+        files.extend(
+            discover_files(
+                scan_root,
+                include=config.get("include") or None,
+                exclude=config.get("exclude") or None,
+            )
+        )
+    files.sort(key=lambda item: (str(item.path.parent), item.path.name))
     notes: list[str] = []
 
     if not files:
+        read_locations = ", ".join(str(item) for item in roots)
         notes.append(
-            f"No data files found in {root}. Drop CSV/JSON fare exports there "
+            f"No data files found in {read_locations}. Drop CSV/JSON fare exports there "
             "(see data/README.md) — the synthetic demo dataset is being served until you do."
         )
         return CustomData(None, [], {}, [], [], {}, "none", notes, config)
@@ -1573,7 +1651,9 @@ def build_custom_dataset(root: Optional[Path] = None) -> CustomData:
 
     ds.source_files = [f.as_dict() for f in files]
     ds.import_notes = {
-        "data_dir": str(root),
+        "data_dir": str(primary_root),
+        "data_roots": [str(item) for item in roots],
+        "upload_dir": str(upload_root()) if root is None else str(primary_root),
         "weight_basis": route_info["weight_basis"],
         "notes": notes,
         "quality": quality,
@@ -1617,17 +1697,22 @@ _signature: Optional[tuple] = None
 
 
 def signature(root: Optional[Path] = None) -> Optional[tuple]:
-    """Cheap fingerprint of the data directory (paths + mtime + size + config)."""
-    root = Path(root) if root else data_root()
-    if not root.exists():
+    """Cheap fingerprint of all active data roots (paths + mtime + size + config)."""
+    primary_root = Path(root) if root is not None else data_root()
+    roots = data_roots(root)
+    if not any(item.exists() for item in roots):
         return None
-    parts: list[Any] = [str(root), json.dumps(load_config(root), sort_keys=True, default=str)]
-    for data_file in discover_files(root):
-        try:
-            st = data_file.path.stat()
-        except OSError:
-            continue
-        parts.append((str(data_file.path), st.st_mtime_ns, st.st_size))
+    parts: list[Any] = [
+        tuple(str(item) for item in roots),
+        json.dumps(load_config(primary_root), sort_keys=True, default=str),
+    ]
+    for scan_root in roots:
+        for data_file in discover_files(scan_root):
+            try:
+                st = data_file.path.stat()
+            except OSError:
+                continue
+            parts.append((str(data_file.path), st.st_mtime_ns, st.st_size))
     return tuple(parts)
 
 
@@ -1652,6 +1737,8 @@ def import_report() -> dict:
         return {
             "enabled": False,
             "data_dir": str(data_root()),
+            "data_dirs": [str(item) for item in data_roots()],
+            "upload": upload_diagnostics(),
             "active": False,
             "origin": "demo",
             "notes": ["Custom data loading is disabled (APIX_CUSTOM_DATA=0 or APIX_DATA_MODE=demo)."],
@@ -1695,13 +1782,31 @@ def _safe_filename(name: str) -> str:
     return base
 
 
-def _next_free_path(root: Path, filename: str, overwrite: bool = False) -> Path:
+def _next_free_path(
+    root: Path,
+    filename: str,
+    overwrite: bool = False,
+    *,
+    occupied_roots: Optional[Iterable[Path]] = None,
+) -> Path:
+    """Choose a non-clobbering path, considering every active read root.
+
+    On Vercel an upload root and the bundled data root differ. Treating only the
+    writable root as occupied would let a new ``newfare1.csv`` shadow a bundled
+    ``newfare1.csv`` and make the import look duplicated. Keep the familiar
+    suffix behaviour across both roots instead (``newfare1_1.csv``).
+    """
+    roots = [Path(item) for item in (occupied_roots or [root])]
+
+    def occupied(candidate_name: str) -> bool:
+        return any((item / candidate_name).exists() for item in roots)
+
     target = root / filename
-    if not target.exists() or overwrite:
+    if overwrite or not occupied(filename):
         return target
-    # Never clobber: append a counter so every import stays recoverable.
+    # Never clobber or shadow: append a counter so every import stays recoverable.
     stem, suffix, n = Path(filename).stem, Path(filename).suffix, 1
-    while target.exists():
+    while occupied(target.name):
         target = root / f"{stem}_{n}{suffix}"
         n += 1
     return target
@@ -1709,51 +1814,105 @@ def _next_free_path(root: Path, filename: str, overwrite: bool = False) -> Path:
 
 def import_bytes(filename: str, payload: bytes, *, root: Optional[Path] = None,
                  overwrite: bool = False) -> Path:
-    """Write an uploaded export into the data directory.
+    """Write an uploaded export into a writable import directory.
 
-    Used by ``POST /api/data/upload`` (and by the CLI), so the browser and the
-    shell share one code path — including the "never overwrite" rule.
+    The scan root and upload target intentionally diverge on serverless hosts:
+    ``/var/task/data`` remains readable for included samples while uploads go to
+    ``/tmp``. This prevents a read-only deployment filesystem from blocking a
+    database import before its rows even reach the persistence layer.
     """
+    if not filename:
+        raise ValueError("upload has no file name")
     suffix = Path(filename).suffix.lower()
     if suffix not in SUPPORTED_SUFFIXES:
         raise ValueError(
             f"unsupported file type '{suffix or filename}'. Convert to CSV, or use one of: "
             + ", ".join(sorted(SUPPORTED_SUFFIXES))
         )
-    root = Path(root) if root else data_root()
+    if not payload:
+        raise ValueError("uploaded file is empty")
+    use_active_roots = root is None
+    root = Path(root) if root is not None else upload_root()
     root.mkdir(parents=True, exist_ok=True)
-    target = _next_free_path(root, _safe_filename(filename), overwrite=overwrite)
+    target = _next_free_path(
+        root,
+        _safe_filename(filename),
+        overwrite=overwrite,
+        # Include the operator-managed read roots for a browser/default import,
+        # so same-named bundled and temporary files never become ambiguous.
+        occupied_roots=data_roots() if use_active_roots else [root],
+    )
     if not str(target.resolve()).startswith(str(root.resolve())):
-        raise ValueError("refusing to write outside the data directory")
+        raise ValueError("refusing to write outside the upload directory")
     target.write_bytes(payload)
     invalidate_cache()
     return target
 
 
 def remove_file(name: str, root: Optional[Path] = None) -> Path:
-    """Delete one imported file (from the dashboard's Import screen)."""
-    root = Path(root) if root else data_root()
-    target = (root / _safe_filename(name)).resolve()
-    if root.resolve() != target.parent and root.resolve() not in target.parents:
-        raise ValueError("refusing to delete outside the data directory")
-    if not target.is_file():
-        raise FileNotFoundError(f"no such imported file: {name}")
-    target.unlink()
-    invalidate_cache()
-    return target
+    """Delete one imported file (from the dashboard's Import screen).
+
+    The writable runtime upload directory is checked first. Bundled files can
+    still be removed in a local/operator-managed data directory, but a serverless
+    package file returns a clear read-only error rather than a misleading 404.
+    """
+    safe_name = _safe_filename(name)
+    # Prefer the writable landing zone before a bundled/operator-managed root.
+    # On Vercel both may contain a same-named sample, but the /tmp upload is the
+    # one the visitor can safely remove; attempting the package copy first turns
+    # a valid delete into a misleading read-only error.
+    roots = [Path(root)] if root is not None else [upload_root(), *data_roots()]
+    seen: set[str] = set()
+    for candidate_root in roots:
+        marker = str(candidate_root.absolute())
+        if marker in seen:
+            continue
+        seen.add(marker)
+        target = (candidate_root / safe_name).resolve()
+        if candidate_root.resolve() != target.parent and candidate_root.resolve() not in target.parents:
+            raise ValueError("refusing to delete outside the data directory")
+        if not target.is_file():
+            continue
+        can_write, reason = _probe_writable(candidate_root)
+        if not can_write:
+            raise OSError(
+                f"{safe_name} is deployment-managed and cannot be deleted here. "
+                f"{reason}. Upload a replacement or change APIX_UPLOAD_DATA_DIR."
+            )
+        target.unlink()
+        invalidate_cache()
+        return target
+    raise FileNotFoundError(f"no such imported file: {name}")
 
 
 def writable(root: Optional[Path] = None) -> tuple[bool, Optional[str]]:
     """Can the dashboard actually accept uploads here? (serverless may not)."""
-    root = Path(root) if root else data_root()
-    try:
-        root.mkdir(parents=True, exist_ok=True)
-        probe = root / ".apix-write-probe"
-        probe.write_text("ok", encoding="utf-8")
-        probe.unlink()
-        return True, None
-    except OSError as exc:
-        return False, f"{root} is not writable ({exc.__class__.__name__})"
+    return _probe_writable(Path(root) if root is not None else upload_root())
+
+
+def upload_diagnostics() -> dict[str, Any]:
+    """Safe storage facts returned to the import UI and support logs.
+
+    This deliberately reports paths and capabilities, never environment values
+    or database credentials. It turns an opaque Errno 30 into an actionable
+    diagnosis: where the upload was attempted, whether it is writable, and
+    whether the uploaded file survives a serverless cold start.
+    """
+    target = upload_root()
+    can_write, reason = writable(target)
+    serverless = bool(getattr(settings, "request_scoped_runtime", False))
+    return {
+        "read_dirs": [str(item) for item in data_roots()],
+        "upload_dir": str(target),
+        "writable": can_write,
+        "serverless": serverless,
+        "ephemeral": serverless,
+        "reason": reason,
+        "note": (
+            "Uploads are staged in a writable temporary directory and should be pushed to PostgreSQL for durability."
+            if serverless else None
+        ),
+    }
 
 
 def import_file(src: str | Path, *, name: Optional[str] = None, root: Optional[Path] = None,

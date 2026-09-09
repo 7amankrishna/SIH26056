@@ -1,7 +1,7 @@
 """Collection-engine endpoints: the scraper control surface + raw feed.
 
-These are what the dashboard's demo/scraper toggle and the "Live Feed" screen
-talk to. Note the split of responsibilities:
+These are what the dashboard's demo/scraper toggle and external audit clients
+use. Note the split of responsibilities:
 
 * mode (which data the *index* serves) lives here, not in the frontend;
 * a sweep is fire-and-forget async — the UI polls ``/collect/status``;

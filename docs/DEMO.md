@@ -28,14 +28,11 @@ synthetic dataset is in use.
    T+1 than T+45"). Apply route/airline filters.
 6. **Airline comparison** — Airlines page; observed vs normalized metrics with a
    clear statistical disclaimer.
-7. **Data quality** — Data Quality page; quality score, breakdown, and a real
-   drill-down into rejected/suspicious observations.
-8. **Collection pipeline** — Collection Monitor; per-source health, latency,
-   failures, circuit-breaker state and compliance. Demonstrates that a disabled
-   source is never shown as live.
-9. **Index methodology** — Methodology page; 8-step framework, the actual
-   formula, definitions and the prototype disclaimer.
-10. **Provenance drill-down** — Airfare Index → "Contribution to today's APIx";
+7. **Import and persistence** — Import Data page; show the upload-storage
+   diagnostic, database status, and idempotent Push to database / Push demo data actions.
+8. **Index methodology** — Methodology page; rendered LaTex estimators,
+   inclusion rules, base-period settings and the prototype disclaimer.
+9. **Provenance drill-down** — Airfare Index → "Contribution to today's APIx";
     each route links to its detail. Every index value traces back to
     observations, source and raw payload.
 
@@ -44,7 +41,7 @@ synthetic dataset is in use.
 - Change the hero chart range (7D/30D/90D/6M/1Y).
 - Filter globally by route, airline or source (URL-synced).
 - Drill into any route and see its index series and airline mix.
-- Inspect exactly which observations were rejected and why.
+- Inspect file-level mapping, skipped rows and safe storage diagnostics.
 - Read the OpenAPI docs and hit any endpoint with a real JSON response.
 
 ## What to emphasize (and what to be honest about)
@@ -60,16 +57,13 @@ This is the moment to show that the pipeline is real rather than a mock-up.
 1. Point the **Scraper / Demo data** switch (top-right) at **Scraper**. The whole
    dashboard re-renders off the SQLite store — same endpoints, same methodology,
    collected numbers. The header badge flips to `LIVE · SCRAPED DATA`.
-2. Open **Live Feed (Scraper)**. Show the raw payloads tab: that is the bytes the
-   source returned, verbatim, next to the canonical observation it produced.
-3. Hit **Run sweep now** and watch the run log gain a row with query/request/
-   observation/failure counts.
-4. Click the **Collection rules** tab. It prints the enforced politeness values and
-   the explicit list of techniques that are *not* implemented — CAPTCHA handling,
-   UA/TLS-fingerprint rotation, `Sec-Fetch-*` forgery, stealth-browser patches.
-   Say this out loud: *"the collector is real, and it is deliberately unable to
-   evade a source that blocks it. If a source says no, the monitor shows blocked."*
-5. Flip back to **Demo data** to finish on the reproducible 90-day story.
+2. Trigger one collection sweep through the header scraper control (or
+   `POST /api/collect/sweep`) and inspect the resulting run through the documented API.
+3. Explain the enforced politeness policy: CAPTCHA handling, UA/TLS-fingerprint
+   rotation, `Sec-Fetch-*` forgery and stealth-browser patches are not implemented.
+   Say this out loud: *"the collector is real, and it deliberately stops when a
+   source says no."*
+4. Flip back to **Demo data** to finish on the reproducible 90-day story.
 
 Be ready for the obvious question — *"can it just scrape Google Flights?"* The
 answer is in [Scraping / collection policy](SCRAPING_POLICY.md): no, and here is
@@ -82,13 +76,10 @@ asks it is testing whether you thought about it.
 The same story works on a public deployment. Vercel has no process lifetime for a
 background loop, so the collector runs the sweep **inside** the request: point the
 switch at **Scraper** and the toggle returns after the first sweep has landed,
-with the observations already on screen. The Live Feed shows a
-**sweeps run in-request** chip and an amber **Ephemeral collection store
-(serverless /tmp)** banner — say it out loud, it is a property of the platform,
-not a broken scraper: collected history resets on a cold start or redeploy unless
-`APIX_IGNORE_DATABASE_URL=0` is set and `DATABASE_URL` points at a PostgreSQL
-database. By default Vercel ignores `DATABASE_URL`, so a leftover value does not
-stop a demo sweep.
+with the observations already on screen. Without a configured PostgreSQL URL,
+the store is an **ephemeral collection store (serverless /tmp)** — collected history
+resets on a cold start or redeploy. Configure `DATABASE_URL` for PostgreSQL and
+leave `APIX_IGNORE_DATABASE_URL` unset (or `0`) for durable history.
 
 A live store only has the days it has collected. APIx is rebased to 100 against
 its own base period, so a one-day live index is a flat line *by construction* —
