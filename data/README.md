@@ -15,11 +15,24 @@ data/
 └── _templates/            ← starting points (ignored by the loader: copy out)
 ```
 
+### Importing an attached export
+
+```bash
+cd backend
+python -m app.custom_data --import ~/Downloads/my_fares.xlsx
+python -m app.custom_data --import ~/Downloads/export.csv --as fares_2026_09.csv
+```
+
+That copies the file into this folder (never overwriting — a second import of
+the same file becomes `my_fares_1.xlsx`), then prints the parse report.
+
 ## 1. Fare files (required)
 
-Accepted: `.csv` `.tsv` `.txt` `.json` `.jsonl` `.ndjson` (comma/tab/semicolon/pipe
-delimited CSVs are sniffed automatically). Sub-folders are scanned too. Files or
-folders whose name starts with `_` are skipped.
+Accepted: `.csv` `.tsv` `.txt` `.json` `.jsonl` `.ndjson` `.xlsx` `.xlsm`
+(comma/tab/semicolon/pipe delimited CSVs are sniffed automatically; the first
+worksheet of an Excel workbook is read, real date cells included — that needs
+`pip install openpyxl`). Sub-folders are scanned too. Files or folders whose
+name starts with `_` are skipped.
 
 Only three things are needed per row — **when** the fare was seen, **which
 route**, and **how much**. Everything else is optional and derived when missing:
@@ -48,6 +61,10 @@ Optional columns that are used when present: `departure_date`, `lead_time_days`,
 
 **Fares** may carry currency symbols and thousands separators — `₹ 4,650.00`,
 `INR 4650`, `4650.00` all work.
+
+**Re-importing the same rows is safe**: identical source + route + date +
+airline + flight + fare is flagged `DUPLICATE` and excluded from the index
+(kept for audit), so a file that arrives twice does not double the index.
 
 ### What the loader fills in for you
 

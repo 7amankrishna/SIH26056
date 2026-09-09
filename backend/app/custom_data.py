@@ -47,6 +47,7 @@ import io
 import json
 import random
 import re
+import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterable, Optional
@@ -71,8 +72,11 @@ from .dataset import (
 # Where the data lives
 # --------------------------------------------------------------------------- #
 
-#: Files with these suffixes are considered data files.
-SUPPORTED_SUFFIXES = {".csv", ".tsv", ".txt", ".json", ".jsonl", ".ndjson"}
+#: Files with these suffixes are considered data files. ``.xlsx`` needs the
+#: optional ``openpyxl`` package (in backend/requirements.txt); without it the
+#: file is skipped with an explicit "convert to CSV" error rather than silence.
+SUPPORTED_SUFFIXES = {".csv", ".tsv", ".txt", ".json", ".jsonl", ".ndjson", ".xlsx", ".xlsm"}
+EXCEL_SUFFIXES = {".xlsx", ".xlsm"}
 
 #: Filenames (stem, lowercased) that are *reference tables* rather than fares.
 REFERENCE_STEMS = {
@@ -639,6 +643,8 @@ def read_rows(path: Path, warning_sink: Optional[list[str]] = None) -> tuple[lis
             warning_sink.append(f"could not read file: {exc}")
         return [], []
 
+    if suffix in EXCEL_SUFFIXES:
+        return _read_excel(path, warning_sink)
     if suffix in (".json", ".jsonl", ".ndjson"):
         return _read_json(text, warning_sink)
 
@@ -668,6 +674,53 @@ def read_rows(path: Path, warning_sink: Optional[list[str]] = None) -> tuple[lis
         return [], []
     headers = [h for h in (reader.fieldnames or []) if h is not None]
     return rows, headers
+
+
+def _read_excel(path: Path, warning_sink: Optional[list[str]] = None) -> tuple[list[dict], list[str]]:
+    """Read the first worksheet of an .xlsx/.xlsm workbook."""
+    try:
+        from openpyxl import load_workbook  # optional dependency
+    except ImportError:
+        if warning_sink is not None:
+            warning_sink.append(
+                "Excel support needs openpyxl: `pip install openpyxl` "
+                "(or re-save the sheet as CSV — nothing else changes)"
+            )
+        return [], []
+    try:
+        wb = load_workbook(filename=str(path), read_only=True, data_only=True)
+    except Exception as exc:
+        if warning_sink is not None:
+            warning_sink.append(f"could not open workbook: {exc}")
+        return [], []
+    try:
+        ws = wb[wb.sheetnames[0]]
+        records = list(ws.iter_rows(values_only=True))
+    except Exception as exc:
+        if warning_sink is not None:
+            warning_sink.append(f"could not read worksheet: {exc}")
+        return [], []
+    finally:
+        try:
+            wb.close()
+        except Exception:
+            pass
+    if not records:
+        return [], []
+    header = ["" if c is None else str(c) for c in records[0]]
+    rows: list[dict] = []
+    for record in records[1:]:
+        if record is None or all(c is None or str(c).strip() == "" for c in record):
+            continue
+        row = {}
+        for index, name in enumerate(header):
+            key = name or f"col_{index + 1}"
+            value = record[index] if index < len(record) else None
+            if hasattr(value, "isoformat"):       # datetime / date cells
+                value = value.isoformat()
+            row[key] = value
+        rows.append(row)
+    return rows, [h for h in header if h]
 
 
 def _read_json(text: str, warning_sink: Optional[list[str]] = None) -> tuple[list[dict], list[str]]:
@@ -1575,6 +1628,35 @@ def has_custom_data() -> bool:
 # CLI:  python -m app.custom_data [paths...]
 # --------------------------------------------------------------------------- #
 
+def import_file(src: str | Path, *, name: Optional[str] = None, root: Optional[Path] = None,
+                overwrite: bool = False) -> Path:
+    """Copy an attached export into the data directory and validate it.
+
+    This is the whole "here is my data" workflow in one call: the file lands
+    where the loader looks, and you get the parse report back immediately.
+    """
+    src_path = Path(src).expanduser().resolve()
+    if not src_path.is_file():
+        raise FileNotFoundError(f"no such file: {src_path}")
+    if src_path.suffix.lower() not in SUPPORTED_SUFFIXES:
+        raise ValueError(
+            f"unsupported file type '{src_path.suffix}'. Convert to CSV, or one of: "
+            + ", ".join(sorted(SUPPORTED_SUFFIXES))
+        )
+    root = Path(root) if root else data_root()
+    root.mkdir(parents=True, exist_ok=True)
+    target = root / (name or src_path.name)
+    if target.exists() and not overwrite:
+        # Never clobber: append a counter so every import is recoverable.
+        stem, suffix, n = target.stem, target.suffix, 1
+        while target.exists():
+            target = root / f"{stem}_{n}{suffix}"
+            n += 1
+    shutil.copy2(src_path, target)
+    invalidate_cache()
+    return target
+
+
 def _main(argv: Optional[list[str]] = None) -> int:
     import argparse
 
@@ -1584,7 +1666,19 @@ def _main(argv: Optional[list[str]] = None) -> int:
     )
     parser.add_argument("paths", nargs="*", help="files or directories to check (default: the data dir)")
     parser.add_argument("--dir", dest="directory", default=None, help="data directory to scan")
+    parser.add_argument(
+        "--import", dest="do_import", metavar="FILE",
+        help="copy FILE into the data directory (never overwriting), then validate it",
+    )
+    parser.add_argument("--as", dest="as_name", default=None,
+                        help="file name to use in the data directory with --import")
     args = parser.parse_args(argv)
+
+    if args.do_import:
+        target = import_file(args.do_import, name=args.as_name,
+                             root=Path(args.directory) if args.directory else None)
+        print(f"imported -> {target}")
+        args.paths = [str(target)]
 
     if args.paths:
         files: list[DataFile] = []

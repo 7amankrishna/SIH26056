@@ -341,6 +341,57 @@ def test_new_routes_leave_the_published_basket_alone(tmp_path, monkeypatch):
         ROUTES.update(snapshot)
 
 
+def test_excel_workbook_is_read_like_a_csv(tmp_path):
+    """Attached spreadsheets are the most common handover format."""
+    openpyxl = pytest.importorskip("openpyxl")
+    import datetime as date_mod
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Fares"
+    ws.append(["Observed On", "Date of Journey", "From", "To", "Airline Name", "Cheapest Fare (INR)"])
+    for day in (1, 2):
+        ws.append([date_mod.date(2026, 9, day), date_mod.date(2026, 9, day + 7),
+                   "DEL", "BOM", "IndiGo", 4800 + day * 50])
+    path = tmp_path / "fares.xlsx"
+    wb.save(path)
+
+    data = build_custom_dataset()
+    obs = data.dataset.observations
+    assert len(obs) == 2
+    assert obs[0].collection_date == "2026-09-01"     # real date cells, not serials
+    assert obs[0].departure_date == "2026-09-08"
+    assert obs[0].lead_time_days == 7
+    assert obs[0].total_fare == 4850.0
+
+
+def test_import_file_lands_in_the_data_dir_without_clobbering(tmp_path):
+    # The "inbox" is underscore-prefixed so the loader ignores the original.
+    src = tmp_path / "_inbox" / "my_fares.csv"
+    write(src, CSV)
+
+    from app.custom_data import import_file
+
+    first = import_file(src)
+    second = import_file(src)
+    assert first.name == "my_fares.csv"
+    assert second.name == "my_fares_1.csv"          # never overwrites an import
+    assert first.parent == tmp_path
+
+    invalidate_cache()
+    data = build_custom_dataset()
+    assert len(data.dataset.observations) == 10      # both imports merged
+    # …and re-importing the same rows does not quietly double the index: the
+    # second copy is flagged DUPLICATE (kept for audit, excluded from the index).
+    assert data.quality.get("DUPLICATE") == 5
+    assert data.quality.get("VALID") == 5
+
+    with pytest.raises(FileNotFoundError):
+        import_file(tmp_path / "nope.csv")
+    with pytest.raises(ValueError):
+        import_file(write(tmp_path / "notes.docx", "nope"))
+
+
 def test_disabled_by_env(tmp_path, monkeypatch):
     write(tmp_path / "fares.csv", CSV)
     monkeypatch.setattr(custom_data, "is_enabled", lambda: False)

@@ -141,9 +141,19 @@ skipped, which is how `data/_templates/` stays out of the way.
 
 ```bash
 cd backend
-python -m app.custom_data                    # report on the data directory
-python -m app.custom_data ../data/my.csv     # validate one file before trusting it
+python -m app.custom_data                            # report on the data directory
+python -m app.custom_data ../data/my.csv             # validate one file before trusting it
+python -m app.custom_data --import ~/Downloads/x.xlsx   # copy an export in, then validate it
+python -m app.custom_data --import ~/Downloads/x.csv --as fares_2026_09.csv
 ```
+
+`--import` never overwrites: importing the same file twice lands it as
+`x_1.xlsx`. The rows are then flagged `DUPLICATE` (same source + route + date +
+airline + flight + fare), so a repeat import cannot double the index.
+
+`.xlsx` / `.xlsm` need the optional `openpyxl` package (in
+`backend/requirements.txt`); without it the file is skipped with an explicit
+"convert to CSV" message rather than failing silently.
 
 ```bash
 curl -s localhost:8000/api/data/files | jq '.totals, .files[].mapped'
