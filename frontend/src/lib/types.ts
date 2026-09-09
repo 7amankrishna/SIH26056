@@ -158,20 +158,6 @@ export interface Quality {
   weighted_score: number;
 }
 
-export interface RejectedObservation {
-  observation_id: string;
-  source: string;
-  route: string;
-  departure_date: string;
-  collection_date: string;
-  airline: string;
-  lead_time_days: number;
-  total_fare: number;
-  quality_status: string;
-  quality_score: number;
-  exclusion_reason: string | null;
-}
-
 export interface SourceRun {
   source: string;
   name: string;
@@ -209,18 +195,6 @@ export interface CollectionRuns {
   };
   /** live mode only — the full run log, blocked/failed rows included */
   runs?: CollectionRun[];
-}
-
-export interface Methodology {
-  title: string;
-  version: string;
-  status: string;
-  steps: { step: number; title: string; detail: string }[];
-  formula: string;
-  definitions: Record<string, string>;
-  base_period: { start: string; end: string };
-  weight_version: string;
-  disclaimer: string;
 }
 
 export interface Provenance {
@@ -377,57 +351,6 @@ export interface CollectStatus {
     robots_fail_closed: boolean;
   };
   last_sweep_error?: string | null;
-}
-
-/** One stored response body, verbatim as collected. */
-export interface RawPayloadRow {
-  run_id: string;
-  source: string;
-  url: string;
-  http_status: number;
-  fetched_at: string;
-  latency_ms?: number | null;
-  query: Record<string, unknown>;
-  payload: Record<string, unknown>;
-  payload_sha?: string;
-}
-
-export interface CollectFareRow {
-  observation_id: string;
-  run_id?: string | null;
-  source: string;
-  origin: string;
-  destination: string;
-  route: string;
-  departure_date: string;
-  collection_date: string;
-  collection_timestamp: string;
-  airline: string;
-  flight_number?: string | null;
-  cabin: string;
-  fare_class?: string | null;
-  lead_time_days: number;
-  base_fare: number;
-  taxes: number;
-  fees: number;
-  total_fare: number;
-  currency: string;
-  availability: string;
-  seats_remaining?: number | null;
-  raw_payload_reference: string;
-  fingerprint: string;
-  quality_status: string;
-  quality_score: number;
-  exclusion_reason?: string | null;
-  in_basket?: number;
-}
-
-export interface CollectionPolicy {
-  policy_document: string;
-  sent_headers: string[];
-  not_implemented: string[];
-  politeness: Record<string, unknown>;
-  sources: CollectorSource[];
 }
 
 export interface SweepResult {

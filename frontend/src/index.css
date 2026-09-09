@@ -400,6 +400,64 @@
     @apply font-semibold tabular-nums text-white;
   }
 
+  /* ---- institutional shell --------------------------------------------------
+     The sidebar + hero keep a fixed deep-navy aviation treatment in BOTH
+     themes (like a government statistical platform), so their colors are
+     literal rather than theme tokens. Gradients stay selective: branding,
+     active nav, hero and small accents only.
+     -------------------------------------------------------------------------- */
+  .sidebar-surface {
+    background:
+      radial-gradient(120% 55% at 0% 0%, rgb(37 99 235 / 0.28) 0%, transparent 60%),
+      linear-gradient(180deg, #0b1220 0%, #0d1b3a 58%, #10254d 100%);
+    color: #dbe4f3;
+  }
+  .sidebar-kicker {
+    @apply px-3 text-[10px] font-semibold uppercase tracking-[0.16em];
+    color: #8093b8;
+  }
+  .sidebar-nav-item {
+    @apply relative flex w-full items-center gap-3 rounded-lg px-3 py-2 text-[13px] font-medium;
+    color: #b9c6de;
+    transition: background-color 150ms ease, color 150ms ease;
+  }
+  .sidebar-nav-item:hover {
+    background: rgb(255 255 255 / 0.07);
+    color: #f1f5f9;
+  }
+  .sidebar-nav-item-active,
+  .sidebar-nav-item-active:hover {
+    background: linear-gradient(90deg, #1d4ed8 0%, #0e7490 100%);
+    color: #ffffff;
+    box-shadow: 0 6px 16px rgb(29 78 216 / 0.35);
+  }
+  .brand-mark {
+    background: linear-gradient(135deg, #2563eb 0%, #06b6d4 100%);
+    box-shadow: 0 8px 20px rgb(6 182 212 / 0.35);
+  }
+  .brand-wordmark {
+    background: linear-gradient(100deg, #ffffff 25%, #7dd3fc 95%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  .hero-panel {
+    background:
+      radial-gradient(90% 150% at 100% 0%, rgb(56 189 248 / 0.30) 0%, transparent 55%),
+      linear-gradient(115deg, #0b1220 0%, #13245a 55%, #1d4ed8 100%);
+  }
+  .kpi-icon-tile {
+    background: linear-gradient(
+      135deg,
+      rgb(var(--brand-500) / 0.16),
+      rgb(var(--accent) / 0.14)
+    );
+    color: rgb(var(--brand-700));
+  }
+  .dark .kpi-icon-tile {
+    color: rgb(var(--brand-400));
+  }
+
   /* ---- skeletons ----------------------------------------------------------- */
   .skeleton {
     position: relative;

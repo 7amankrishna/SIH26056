@@ -1,7 +1,8 @@
 // Executive dashboard — the default landing page.
 
 import { useNavigate } from "react-router-dom";
-import { Activity, ArrowDownRight, ArrowUpRight, Building2, Layers, Route, Shuffle } from "lucide-react";
+import { Activity, ArrowDownRight, ArrowUpRight, Layers, Route } from "lucide-react";
+import { HeroBanner } from "../components/HeroBanner";
 import { KpiCard } from "../components/KpiCard";
 import { DeltaBadge } from "../components/badges";
 import { IndexTrendChart } from "../components/charts/IndexTrendChart";
@@ -32,6 +33,8 @@ export default function Overview() {
 
   return (
     <div className="space-y-5">
+      <HeroBanner />
+
       <div>
         <h2 className="text-xl font-bold text-ink-900">Overview</h2>
         <p className="text-sm text-ink-500">

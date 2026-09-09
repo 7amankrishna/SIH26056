@@ -106,10 +106,7 @@ describe("App render smoke test", () => {
     ["/routes", "Routes"],
     ["/airlines", "Airline Price Intelligence"],
     ["/lead-time", "Lead-Time Elasticity"],
-    ["/quality", "Data Quality"],
     ["/collection", "Collection Monitor"],
-    ["/live-feed", "Collection engine"],
-    ["/methodology", "Index Methodology"],
     ["/api", "API / Data Access"],
   ])("renders %s without throwing", async (path, heading) => {
     const { unmount } = render(

@@ -59,9 +59,6 @@ const ANALYTICAL_KEYS = [
   "collection-runs",
   "stats-overview",
   "health",
-  "collect-fares",
-  "collect-runs",
-  "collect-payloads",
 ];
 
 export function DataSourceProvider({ children }: { children: ReactNode }) {

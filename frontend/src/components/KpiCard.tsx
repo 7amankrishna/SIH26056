@@ -1,4 +1,6 @@
 // Compact, consistent KPI / stat card used across the dashboard.
+// Subtle gradient accents only: a fading top bar and a tinted icon tile —
+// the value stays the visual anchor.
 
 import type { ReactNode } from "react";
 import { Skeleton } from "./Skeleton";
@@ -21,11 +23,14 @@ export function KpiCard({
   loading?: boolean;
 }) {
   return (
-    <div className="card relative overflow-hidden p-4 transition-shadow duration-200 hover:shadow-pop">
+    <div className="card group relative overflow-hidden p-4 transition-shadow duration-200 hover:shadow-pop">
       {accent && (
         <span
+          aria-hidden
           className="absolute inset-x-0 top-0 h-1"
-          style={{ background: accent }}
+          style={{
+            background: `linear-gradient(90deg, ${accent} 0%, ${accent}00 100%)`,
+          }}
         />
       )}
       <div className="flex items-start justify-between gap-2">
@@ -39,10 +44,7 @@ export function KpiCard({
           {sub && <div className="mt-1 text-xs text-ink-500">{sub}</div>}
         </div>
         {icon && (
-          <div
-            className="shrink-0 rounded-lg p-1.5 text-ink-500"
-            style={{ background: "rgb(var(--ink-900) / 0.05)" }}
-          >
+          <div className="kpi-icon-tile shrink-0 rounded-lg p-2 transition-transform duration-200 group-hover:scale-105">
             {icon}
           </div>
         )}

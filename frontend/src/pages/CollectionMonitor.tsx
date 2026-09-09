@@ -170,9 +170,10 @@ export default function CollectionMonitor() {
             circumvention is implemented anywhere in the engine.
           </p>
           <p className="mt-2 text-xs text-emerald-700">
-            Raw payloads, per-sweep run log and the enforced header policy live on the{" "}
-            <Link to="/live-feed" className="font-semibold underline decoration-emerald-300 underline-offset-2 hover:text-emerald-900">
-              Live Feed (Scraper)
+            Raw payloads, per-sweep run logs and the enforced header policy remain available to auditors through the
+            collection endpoints documented on the{" "}
+            <Link to="/api" className="font-semibold underline decoration-emerald-300 underline-offset-2 hover:text-emerald-900">
+              API / Data Access
             </Link>{" "}
             screen.
           </p>

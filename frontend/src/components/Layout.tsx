@@ -1,18 +1,19 @@
-// Application shell: sticky sidebar navigation + top header. Information-dense
-// and professional — built for a large-screen SIH jury demonstration.
+// Application shell: institutional navy sidebar + contextual top header.
+// Information-dense and professional — built for a large-screen SIH jury
+// demonstration. The sidebar keeps a fixed government/aviation treatment in
+// both themes; the content area follows the user's theme.
 
 import { useEffect, useState } from "react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import {
   Activity,
-  AirVent,
-  BookOpen,
   Building2,
   CalendarClock,
-  ClipboardCheck,
   Database,
   Gauge,
+  Landmark,
   Menu,
+  Plane,
   Radar,
   Route,
   TrendingUp,
@@ -26,68 +27,94 @@ import { useDataSource } from "../hooks/useDataSource";
 import { DeltaBadge } from "./badges";
 import { formatDateTime } from "../lib/format";
 
-const NAV = [
-  { to: "/", label: "Overview", icon: Gauge, end: true },
-  { to: "/index", label: "Airfare Index", icon: TrendingUp },
-  { to: "/routes", label: "Routes", icon: Route },
-  { to: "/airlines", label: "Airlines", icon: Building2 },
-  { to: "/lead-time", label: "Lead Time", icon: CalendarClock },
-  { to: "/quality", label: "Data Quality", icon: ClipboardCheck },
-  { to: "/collection", label: "Collection Monitor", icon: Radar },
-  { to: "/live-feed", label: "Live Feed (Scraper)", icon: Database },
-  { to: "/methodology", label: "Methodology", icon: BookOpen },
-  { to: "/api", label: "API / Data Access", icon: Activity },
+const NAV_SECTIONS = [
+  {
+    title: "Intelligence",
+    items: [
+      { to: "/", label: "Overview", icon: Gauge, end: true },
+      { to: "/index", label: "Airfare Index", icon: TrendingUp },
+      { to: "/routes", label: "Routes", icon: Route },
+      { to: "/airlines", label: "Airlines", icon: Building2 },
+      { to: "/lead-time", label: "Lead Time", icon: CalendarClock },
+    ],
+  },
+  {
+    title: "Operations",
+    items: [
+      { to: "/collection", label: "Collection Monitor", icon: Radar },
+      { to: "/api", label: "API / Data Access", icon: Activity },
+    ],
+  },
 ];
+
+const FLAT_NAV = NAV_SECTIONS.flatMap((s) => s.items);
 
 function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   return (
     <>
-      <div className="flex items-center gap-2.5 px-4 py-5">
-        <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-brand-500 to-accent text-white shadow-card">
-          <AirVent className="h-5 w-5" />
+      {/* Brand — mark and wordmark rendered ~20% larger than the previous
+          36px / 16px treatment (44px mark, 20px wordmark). */}
+      <div className="flex items-center gap-3 px-4 pb-5 pt-6">
+        <div className="brand-mark flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-white">
+          <Plane className="h-6 w-6" />
         </div>
-        <div>
-          <div className="text-base font-bold tracking-tight text-ink-900">APIx</div>
-          <div className="text-[10px] leading-tight text-ink-500">Airfare Price Index · India</div>
+        <div className="min-w-0">
+          <div className="brand-wordmark text-xl font-extrabold tracking-tight">
+            APIx
+          </div>
+          <div className="text-[11px] leading-tight text-[#93a5c4]">
+            Real-Time Airfare Price Index · India
+          </div>
         </div>
       </div>
-      <nav className="flex-1 space-y-0.5 px-3" aria-label="Primary">
-        {NAV.map((item) => (
-          <NavLink
-            key={item.to}
-            to={item.to}
-            end={item.end}
-            onClick={onNavigate}
-            className={({ isActive }) =>
-              `relative flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors duration-150 ${
-                isActive
-                  ? "bg-brand-50 text-brand-700 dark:text-brand-300"
-                  : "text-ink-600 hover:bg-ink-100 hover:text-ink-900"
-              }`
-            }
-          >
-            {({ isActive }) => (
-              <>
-                {/* active indicator */}
-                <span
-                  aria-hidden
-                  className={`absolute left-0 top-1/2 h-4 w-0.5 -translate-y-1/2 rounded-full bg-brand-600 transition-opacity duration-150 ${
-                    isActive ? "opacity-100" : "opacity-0"
-                  }`}
-                />
-                <item.icon className="h-4 w-4 shrink-0" />
-                {item.label}
-              </>
-            )}
-          </NavLink>
+
+      <nav className="flex-1 space-y-5 overflow-y-auto px-3 pb-4" aria-label="Primary">
+        {NAV_SECTIONS.map((section) => (
+          <div key={section.title}>
+            <p className="sidebar-kicker mb-1.5">{section.title}</p>
+            <div className="space-y-0.5">
+              {section.items.map((item) => (
+                <NavLink
+                  key={item.to}
+                  to={item.to}
+                  end={item.end}
+                  onClick={onNavigate}
+                  className={({ isActive }) =>
+                    `sidebar-nav-item ${isActive ? "sidebar-nav-item-active" : ""}`
+                  }
+                >
+                  <item.icon className="h-4 w-4 shrink-0" />
+                  {item.label}
+                </NavLink>
+              ))}
+            </div>
+          </div>
         ))}
       </nav>
-      <div className="px-4 py-4">
-        <div className="rounded-lg border border-ink-200 bg-ink-50 p-3">
-          <p className="text-[10px] font-semibold uppercase tracking-wide text-ink-500">Methodology</p>
-          <p className="mt-0.5 text-xs text-ink-600">v1.0.0 · Provisional weights</p>
+
+      {/* Government / statistical identity — neutral placeholder seal,
+          deliberately not an official emblem. */}
+      <div className="px-4 pb-3">
+        <div className="rounded-xl border border-white/10 bg-white/5 p-3.5">
+          <div className="flex items-start gap-3">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[#7dd3fc]/30 bg-[#38bdf8]/10 text-[#7dd3fc]">
+              <Landmark className="h-[18px] w-[18px]" aria-hidden />
+            </span>
+            <div className="min-w-0">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[#7dd3fc]/90">
+                A prototype for
+              </p>
+              <p className="mt-0.5 text-xs font-medium leading-snug text-[#e2e8f0]">
+                Ministry of Statistics &amp; Programme Implementation
+              </p>
+              <p className="mt-1 text-[11px] leading-snug text-[#93a5c4]">
+                High-frequency airfare intelligence for CPI augmentation
+              </p>
+            </div>
+          </div>
         </div>
       </div>
+      <p className="px-4 pb-4 text-[10px] text-[#7d8db1]">v0.1.0 · SIH26056</p>
     </>
   );
 }
@@ -98,6 +125,15 @@ export function Layout() {
   const { isLive, mode, daysCollected, counts, ready } = useDataSource();
   const [bannerHidden, setBannerHidden] = useState(false);
   const location = useLocation();
+
+  // Contextual title for the top header (rendered as a paragraph so the
+  // page-level h2 headings keep the document outline).
+  const current =
+    FLAT_NAV.find((item) =>
+      item.end
+        ? location.pathname === item.to
+        : location.pathname === item.to || location.pathname.startsWith(`${item.to}/`),
+    ) ?? FLAT_NAV[0];
 
   // Escape closes the mobile drawer.
   useEffect(() => {
@@ -129,8 +165,7 @@ export function Layout() {
       </a>
 
       {/* Desktop sidebar */}
-      <aside className="hidden w-64 shrink-0 flex-col border-r border-ink-200 bg-surface lg:flex"
-        style={{ borderColor: "rgb(var(--ink-900) / 0.08)" }}>
+      <aside className="sidebar-surface hidden w-64 shrink-0 flex-col lg:flex">
         <SidebarContent />
       </aside>
 
@@ -142,9 +177,9 @@ export function Layout() {
             onClick={() => setMobileOpen(false)}
             aria-hidden
           />
-          <aside className="absolute left-0 top-0 flex h-full w-64 flex-col bg-surface shadow-overlay">
+          <aside className="sidebar-surface absolute left-0 top-0 flex h-full w-64 flex-col overflow-y-auto shadow-overlay">
             <button
-              className="absolute right-3 top-3 rounded-md p-1 text-ink-500 transition-colors hover:bg-ink-100 hover:text-ink-800"
+              className="absolute right-3 top-3 rounded-md p-1 text-[#93a5c4] transition-colors hover:bg-white/10 hover:text-white"
               onClick={() => setMobileOpen(false)}
               aria-label="Close navigation menu"
             >
@@ -170,7 +205,9 @@ export function Layout() {
               <Menu className="h-5 w-5" />
             </button>
             <div className="min-w-0">
-              <h1 className="truncate text-base font-bold text-ink-900">Real-Time Airfare Price Index</h1>
+              <p className="truncate text-base font-bold text-ink-900">
+                {current.label}
+              </p>
               <p className="hidden text-[11px] text-ink-500 sm:block">
                 High-frequency airfare intelligence for CPI augmentation
               </p>
@@ -215,8 +252,9 @@ export function Layout() {
                 <Radar className="mt-0.5 h-4 w-4 shrink-0" />
                 <p>
                   <span className="font-semibold">Live mode requested — no observations stored yet.</span> The screens below are
-                  still on demo data so nothing looks broken. Open <span className="font-mono">Live Feed (Scraper)</span> and run a
-                  sweep, or check that an adapter is enabled via <span className="font-mono">APIX_COLLECTOR_SOURCES</span>.
+                  still on demo data so nothing looks broken. Run a sweep from the{" "}
+                  <span className="font-mono">Collection Monitor</span>, or check that an adapter is enabled via{" "}
+                  <span className="font-mono">APIX_COLLECTOR_SOURCES</span>.
                 </p>
               </div>
             )}

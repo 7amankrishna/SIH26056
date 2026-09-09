@@ -3,13 +3,9 @@
 
 import type {
   AirlineSummary,
-  CollectFareRow,
   CollectStatus,
-  CollectionPolicy,
-  CollectionRun,
   DataSourceState,
   DataMode,
-  RawPayloadRow,
   SweepAccepted,
   SweepResult,
   CollectionRuns,
@@ -17,11 +13,9 @@ import type {
   FaresResponse,
   Health,
   LeadTime,
-  Methodology,
   Overview,
   Provenance,
   Quality,
-  RejectedObservation,
   RouteDetail,
   RouteSummary,
   StatsOverview,
@@ -77,10 +71,8 @@ export const api = {
     request<FareDistribution>(`/fares/distribution${route ? `?route=${route}` : ""}`),
 
   quality: () => request<Quality>("/quality"),
-  qualityRejected: () => request<{ count: number; rows: RejectedObservation[]; statuses: Record<string, number> }>("/quality/rejected"),
 
   collectionRuns: () => request<CollectionRuns>("/collection-runs"),
-  methodology: () => request<Methodology>("/methodology"),
   provenance: (indexId: string) =>
     request<Provenance>(`/provenance/${encodeURIComponent(indexId)}`),
   statsOverview: () => request<StatsOverview>("/stats/overview"),
@@ -94,28 +86,6 @@ export const api = {
     }),
 
   collectStatus: () => request<CollectStatus>("/collect/status"),
-  collectPolicy: () => request<CollectionPolicy>("/collect/policy"),
-  collectRuns: (limit = 20, source?: string) => {
-    const q = new URLSearchParams({ limit: String(limit) });
-    if (source) q.set("source", source);
-    return request<{ count: number; runs: CollectionRun[] }>(`/collect/runs?${q}`);
-  },
-  collectPayloads: (params?: { limit?: number; source?: string; runId?: string }) => {
-    const q = new URLSearchParams();
-    if (params?.limit) q.set("limit", String(params.limit));
-    if (params?.source) q.set("source", params.source);
-    if (params?.runId) q.set("run_id", params.runId);
-    const suffix = q.size ? `?${q}` : "";
-    return request<{ count: number; rows: RawPayloadRow[] }>(`/collect/payloads${suffix}`);
-  },
-  collectFares: (params?: { limit?: number; route?: string; status?: string }) => {
-    const q = new URLSearchParams();
-    if (params?.limit) q.set("limit", String(params.limit));
-    if (params?.route) q.set("route", params.route);
-    if (params?.status) q.set("status", params.status);
-    const suffix = q.size ? `?${q}` : "";
-    return request<{ count: number; total: number; rows: CollectFareRow[] }>(`/collect/fares${suffix}`);
-  },
   /** Runs the sweep inside this request and resolves with its result. */
   runSweep: (body?: { routes?: string[]; lead_times?: number[]; wait?: boolean }) =>
     request<SweepResult & SweepAccepted>("/collect/sweep", {
@@ -134,12 +104,6 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({}),
     }),
-  testSource: (id: string) =>
-    request<{ source: string; ok: boolean; state: string; detail: string; latency_ms?: number }>(
-      `/collect/sources/${encodeURIComponent(id)}/test`,
-      { method: "POST" },
-    ),
-
   fares: (params?: { route?: string; airline?: string; limit?: number }) => {
     const q = new URLSearchParams();
     if (params?.route) q.set("route", params.route);

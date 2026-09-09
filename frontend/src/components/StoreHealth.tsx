@@ -56,22 +56,3 @@ export function StoreHealthBanner({
     </div>
   );
 }
-
-/** Chip explaining *when* a sweep runs on this runtime. */
-export function SweepTimingChip({ requestScoped }: { requestScoped: boolean }) {
-  return requestScoped ? (
-    <span
-      className="chip bg-violet-50 text-violet-700"
-      title="No background loop survives on this runtime (serverless), so POST /api/collect/sweep runs the sweep inside the request and returns its result."
-    >
-      sweeps run in-request
-    </span>
-  ) : (
-    <span
-      className="chip bg-sky-50 text-sky-700"
-      title="A background asyncio loop owns scheduled sweeps on this runtime."
-    >
-      background loop
-    </span>
-  );
-}
