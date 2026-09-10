@@ -61,7 +61,7 @@ export default function LeadTime() {
 
       <ChartCard title="Elasticity Curve" subtitle="Average and median observed fare vs advance booking (days before departure)">
         <DataBoundary variant="chart" isLoading={isLoading} isError={isError} error={error} isEmpty={!chartData.length} emptyTitle="No observations available for this filter combination.">
-          <div className="h-[320px]">
+          <div className="h-[320px] w-full min-w-0 max-w-full overflow-hidden">
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={chartData} margin={{ top: 10, right: 12, bottom: 0, left: -6 }}>
                 <defs>
@@ -82,29 +82,31 @@ export default function LeadTime() {
         </DataBoundary>
       </ChartCard>
 
-      <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 sm:gap-5 lg:grid-cols-2 min-w-0 max-w-full">
         <ChartCard title="By Lead Time" subtitle="Observations and average fare per bucket" pad={false}>
           <DataBoundary variant="chart" isLoading={isLoading} isError={isError} error={error} isEmpty={!series.length} emptyTitle="No data">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-ink-100 text-left text-[11px] uppercase tracking-wide text-ink-500">
-                  <th className="px-5 py-2.5 font-medium">Lead time</th>
-                  <th className="px-3 py-2.5 font-medium">Avg fare</th>
-                  <th className="px-3 py-2.5 font-medium">Median</th>
-                  <th className="px-3 py-2.5 font-medium">Obs</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-ink-100/70">
-                {series.map((s) => (
-                  <tr key={s.lead_time_days} className="hover:bg-ink-50">
-                    <td className="px-5 py-2.5 font-medium text-ink-800">{s.label}</td>
-                    <td className="px-3 py-2.5 tabular-nums text-ink-700">{formatINR(s.avg_fare)}</td>
-                    <td className="px-3 py-2.5 tabular-nums text-ink-700">{formatINR(s.median_fare)}</td>
-                    <td className="px-3 py-2.5 tabular-nums text-ink-500">{s.observations.toLocaleString("en-IN")}</td>
+            <div className="overflow-x-auto min-w-0 max-w-full">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-ink-100 text-left text-[11px] uppercase tracking-wide text-ink-500">
+                    <th className="px-5 py-2.5 font-medium">Lead time</th>
+                    <th className="px-3 py-2.5 font-medium">Avg fare</th>
+                    <th className="px-3 py-2.5 font-medium">Median</th>
+                    <th className="px-3 py-2.5 font-medium">Obs</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody className="divide-y divide-ink-100/70">
+                  {series.map((s) => (
+                    <tr key={s.lead_time_days} className="hover:bg-ink-50">
+                      <td className="px-5 py-2.5 font-medium text-ink-800">{s.label}</td>
+                      <td className="px-3 py-2.5 tabular-nums text-ink-700">{formatINR(s.avg_fare)}</td>
+                      <td className="px-3 py-2.5 tabular-nums text-ink-700">{formatINR(s.median_fare)}</td>
+                      <td className="px-3 py-2.5 tabular-nums text-ink-500">{s.observations.toLocaleString("en-IN")}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </DataBoundary>
         </ChartCard>
 

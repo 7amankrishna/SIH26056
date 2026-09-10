@@ -57,10 +57,10 @@ export default function Airlines() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 sm:gap-5 lg:grid-cols-2 min-w-0 max-w-full">
         <ChartCard title="Average vs Median Fare by Airline" subtitle="Fares differ by route mix; treat as observed, not controlled">
           <DataBoundary isLoading={isLoading} isError={isError} error={error} isEmpty={!chartData.length} emptyTitle="No airline data" variant="chart">
-            <div className="h-[320px]">
+            <div className="h-[320px] w-full min-w-0 max-w-full overflow-hidden">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={chartData} margin={{ top: 10, right: 10, bottom: 0, left: -8 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke={t.grid} vertical={false} />

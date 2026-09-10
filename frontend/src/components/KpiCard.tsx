@@ -23,7 +23,7 @@ export function KpiCard({
   loading?: boolean;
 }) {
   return (
-    <div className="card group relative overflow-hidden p-4 transition-shadow duration-200 hover:shadow-pop">
+    <div className="card group relative min-w-0 max-w-full overflow-hidden p-3.5 sm:p-4 transition-shadow duration-200 hover:shadow-pop">
       {accent && (
         <span
           aria-hidden
@@ -33,23 +33,23 @@ export function KpiCard({
           }}
         />
       )}
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <p className="kpi-label">{label}</p>
+      <div className="flex items-start justify-between gap-1.5 sm:gap-2 min-w-0">
+        <div className="min-w-0 flex-1">
+          <p className="kpi-label truncate">{label}</p>
           {loading ? (
-            <Skeleton className="mt-2 h-8 w-24" />
+            <Skeleton className="mt-2 h-8 w-24 max-w-full" />
           ) : (
             <p className="kpi-value mt-1 truncate">{value}</p>
           )}
-          {sub && <div className="mt-1 text-xs text-ink-500">{sub}</div>}
+          {sub && <div className="mt-1 text-xs text-ink-500 truncate">{sub}</div>}
         </div>
         {icon && (
-          <div className="kpi-icon-tile shrink-0 rounded-lg p-2 transition-transform duration-200 group-hover:scale-105">
+          <div className="kpi-icon-tile shrink-0 rounded-lg p-1.5 sm:p-2 transition-transform duration-200 group-hover:scale-105">
             {icon}
           </div>
         )}
       </div>
-      {delta && <div className="mt-2">{delta}</div>}
+      {delta && <div className="mt-2 min-w-0 truncate">{delta}</div>}
     </div>
   );
 }

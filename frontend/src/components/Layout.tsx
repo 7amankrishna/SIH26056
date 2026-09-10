@@ -137,7 +137,7 @@ export function Layout() {
     : null;
 
   return (
-    <div className="flex h-full min-h-screen bg-page">
+    <div className="flex h-full min-h-screen bg-page w-full max-w-full">
       <a
         href="#main"
         className="sr-only focus:not-sr-only focus:absolute focus:left-3 focus:top-3 focus:z-[70] focus:rounded-lg focus:bg-surface focus:px-3 focus:py-2 focus:text-sm focus:font-medium focus:text-ink-900 focus:shadow-overlay"
@@ -171,36 +171,40 @@ export function Layout() {
         </div>
       )}
 
-      <div className="flex min-w-0 flex-1 flex-col">
+      <div className="flex min-w-0 flex-1 flex-col max-w-full">
         {/* Top header */}
         <header
-          className="sticky top-0 z-30 border-b bg-surface/85 backdrop-blur-md"
+          className="sticky top-0 z-30 w-full max-w-full border-b bg-surface/85 backdrop-blur-md"
           style={{ borderColor: "rgb(var(--ink-900) / 0.08)" }}
         >
-          <div className="flex items-center gap-4 px-4 py-3 sm:px-6">
-            <button
-              className="btn btn-ghost -ml-2 p-2 lg:hidden"
-              onClick={() => setMobileOpen(true)}
-              aria-label="Open navigation menu"
-            >
-              <Menu className="h-5 w-5" />
-            </button>
-            <div className="min-w-0 shrink-0">
-              <p className="truncate text-base font-bold text-ink-900">
-                {current.label}
-              </p>
-              <p className="hidden text-[11px] text-ink-500 xl:block">
-                High-frequency airfare intelligence for CPI augmentation
-              </p>
+          <div className="flex items-center justify-between gap-2 px-3 py-2.5 sm:gap-4 sm:px-6 sm:py-3 min-w-0 max-w-full">
+            <div className="flex items-center gap-2 sm:gap-3 min-w-0 shrink">
+              <button
+                className="btn btn-ghost -ml-1 p-1.5 sm:-ml-2 sm:p-2 lg:hidden shrink-0"
+                onClick={() => setMobileOpen(true)}
+                aria-label="Open navigation menu"
+              >
+                <Menu className="h-5 w-5" />
+              </button>
+              <div className="min-w-0 truncate">
+                <p className="truncate text-sm sm:text-base font-bold text-ink-900 leading-tight">
+                  {current.label}
+                </p>
+                <p className="hidden text-[11px] text-ink-500 xl:block truncate">
+                  High-frequency airfare intelligence for CPI augmentation
+                </p>
+              </div>
             </div>
-            <div className="ml-auto flex items-center gap-2">
+            <div className="flex items-center gap-1.5 sm:gap-2 shrink-0 min-w-0">
               <DataSourceToggle />
-              <div className="hidden sm:block">
+              <div className="hidden md:block shrink-0">
                 <DataModeBadge />
               </div>
-              <ThemeToggle />
+              <div className="shrink-0">
+                <ThemeToggle />
+              </div>
               {overview?.current_apix != null && (
-                <div className="hidden items-center gap-2 md:flex">
+                <div className="hidden items-center gap-2 xl:flex shrink-0">
                   <DeltaBadge value={overview.daily_change} />
                   <span className="text-xs text-ink-500">
                     Last run {formatDateTime(overview.last_run_at)}
@@ -211,9 +215,9 @@ export function Layout() {
           </div>
         </header>
 
-        <main id="main" className="flex-1 px-4 py-6 sm:px-6">
+        <main id="main" className="flex-1 min-w-0 max-w-full px-4 py-6 sm:px-6">
           {/* keyed remount gives each route a 160ms ease-out entrance */}
-          <div key={location.pathname} className="page-enter">
+          <div key={location.pathname} className="page-enter min-w-0 max-w-full">
             {thinNotice && !bannerHidden && (
               <div className="mb-4 flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
                 <Database className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />

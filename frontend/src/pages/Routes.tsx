@@ -63,13 +63,13 @@ function RouteDetailPanel({ route }: { route: string }) {
   return (
     <ChartCard title={`${data?.origin_city ?? ""} → ${data?.destination_city ?? ""}`} subtitle={`Route index · distance ${data?.distance_km ?? "—"} km`}>
       <DataBoundary isLoading={isLoading} isError={isError} error={error} isEmpty={!series.length} emptyTitle={`No observations available for ${route}.`} variant="chart">
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+        <div className="grid grid-cols-2 gap-2.5 sm:gap-4 sm:grid-cols-4 min-w-0 max-w-full">
           <Meta label="Current fare" value={formatINR(data?.meta?.current_fare)} />
           <Meta label="Route index" value={data?.meta?.route_index?.toFixed(1)} />
           <Meta label="Base price" value={formatINR(data?.base_price)} />
           <Meta label="Weight" value={`${(Number(data?.weight ?? 0) * 100).toFixed(1)}%`} />
         </div>
-        <div className="mt-4 h-[240px]">
+        <div className="mt-4 h-[240px] w-full min-w-0 max-w-full overflow-hidden">
           <ResponsiveContainer width="100%" height="100%">
             <AreaChart data={series} margin={{ top: 6, right: 10, bottom: 0, left: -10 }}>
               <defs>
@@ -86,7 +86,7 @@ function RouteDetailPanel({ route }: { route: string }) {
             </AreaChart>
           </ResponsiveContainer>
         </div>
-        <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-3">
+        <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-3 min-w-0 max-w-full">
           {(data?.airlines ?? []).map((a) => (
             <div key={a.airline} className="rounded-lg border border-ink-100 p-3">
               <div className="text-xs font-semibold text-ink-700">{a.name}</div>

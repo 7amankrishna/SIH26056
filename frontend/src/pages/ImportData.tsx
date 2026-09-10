@@ -127,7 +127,7 @@ export default function ImportData() {
             Upload your fare exports — they replace the synthetic demo dataset on every screen.
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2 min-w-0 max-w-full">
           <span
             className={`chip ${data?.active ? "bg-sky-50 text-sky-700" : "bg-amber-50 text-amber-700"}`}
             title={`Data directory: ${data?.data_dir ?? "…"}`}

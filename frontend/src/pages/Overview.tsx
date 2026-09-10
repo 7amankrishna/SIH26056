@@ -56,7 +56,7 @@ export default function Overview() {
       <FilterBar />
 
       {/* KPI strip */}
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6 sm:gap-4 min-w-0 max-w-full">
         <KpiCard
           label="APIx"
           value={formatIndex(overview?.current_apix)}
@@ -107,33 +107,33 @@ export default function Overview() {
       <IndexTrendChart />
 
       {/* Heatmap */}
-      <div className="card">
-        <div className="flex items-center justify-between border-b border-ink-100 px-5 py-3.5">
-          <div>
+      <div className="card min-w-0 max-w-full">
+        <div className="flex items-center justify-between border-b border-ink-100 px-4 py-3 sm:px-5 sm:py-3.5 min-w-0">
+          <div className="min-w-0">
             <h3 className="text-sm font-semibold text-ink-800">India Airfare Route Heatmap</h3>
-            <p className="mt-0.5 text-xs text-ink-500">Origin × destination, encoded by route movement. Hover a cell for detail.</p>
+            <p className="mt-0.5 text-xs text-ink-500 truncate">Origin × destination, encoded by route movement. Hover a cell for detail.</p>
           </div>
         </div>
-        <div className="p-5">
+        <div className="p-3.5 sm:p-5 min-w-0 max-w-full overflow-hidden">
           <RouteHeatmap />
         </div>
       </div>
 
       {/* Rankings + airline mini */}
-      <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 sm:gap-5 lg:grid-cols-2 min-w-0 max-w-full">
         <RouteRanking title="Routes with Largest Price Movement · Increases" routes={topUp} up />
         <RouteRanking title="Routes with Largest Price Movement · Decreases" routes={topDown} down />
       </div>
 
       {/* Bottom Row from Reference: Lead Time, Airline Comparison, Collection Health */}
-      <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 sm:gap-5 lg:grid-cols-3 min-w-0 max-w-full">
         {/* Average Fare by Lead Time */}
-        <div className="card p-5">
+        <div className="card min-w-0 max-w-full p-4 sm:p-5">
           <div className="mb-4">
             <h3 className="text-sm font-semibold text-ink-800">Average Fare by Lead Time</h3>
             <p className="mt-0.5 text-xs text-ink-500">How prices change with advance booking</p>
           </div>
-          <div className="h-52 w-full">
+          <div className="h-52 w-full min-w-0 max-w-full overflow-hidden">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart
                 data={[
@@ -178,12 +178,12 @@ export default function Overview() {
         </div>
 
         {/* Airline Price Comparison */}
-        <div className="card p-5">
+        <div className="card min-w-0 max-w-full p-4 sm:p-5">
           <div className="mb-4">
             <h3 className="text-sm font-semibold text-ink-800">Airline Price Comparison</h3>
             <p className="mt-0.5 text-xs text-ink-500">Average normalized fare (last 30 days)</p>
           </div>
-          <div className="h-52 w-full">
+          <div className="h-52 w-full min-w-0 max-w-full overflow-hidden">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart
                 data={[
@@ -239,7 +239,7 @@ export default function Overview() {
         </div>
 
         {/* Data Collection Health */}
-        <div className="card p-5">
+        <div className="card min-w-0 max-w-full p-4 sm:p-5">
           <div className="mb-4 flex items-center justify-between">
             <div>
               <h3 className="text-sm font-semibold text-ink-800">Data Collection Health</h3>
@@ -253,7 +253,7 @@ export default function Overview() {
             </button>
           </div>
 
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto min-w-0 max-w-full">
             <table className="w-full text-left text-xs">
               <thead>
                 <tr className="border-b border-ink-100 text-[11px] font-medium text-ink-500">
@@ -336,8 +336,8 @@ function RouteRanking({
   const navigate = useNavigate();
   const t = useChartTheme();
   return (
-    <div className="card">
-      <div className="border-b border-ink-100 px-5 py-3.5">
+    <div className="card min-w-0 max-w-full">
+      <div className="border-b border-ink-100 px-4 py-3 sm:px-5 sm:py-3.5">
         <h3 className="text-sm font-semibold text-ink-800">{title}</h3>
       </div>
       <div className="divide-y divide-ink-100">
@@ -346,17 +346,19 @@ function RouteRanking({
           <button
             key={r.route}
             onClick={() => navigate(`/routes?route=${r.route}`)}
-            className="flex w-full items-center gap-4 px-5 py-3 text-left transition-colors duration-150 hover:bg-ink-50"
+            className="flex w-full items-center gap-2 sm:gap-4 px-3 sm:px-5 py-3 text-left transition-colors duration-150 hover:bg-ink-50 min-w-0"
           >
-            <span className="w-6 text-center text-sm font-bold text-ink-500">{i + 1}</span>
+            <span className="w-5 sm:w-6 text-center text-xs sm:text-sm font-bold text-ink-500 shrink-0">{i + 1}</span>
             <div className="min-w-0 flex-1">
-              <div className="truncate text-sm font-medium text-ink-800">
+              <div className="truncate text-xs sm:text-sm font-medium text-ink-800">
                 {r.origin_city} → {r.destination_city}
               </div>
               <div className="text-xs text-ink-500">₹{r.current_fare?.toLocaleString("en-IN") ?? "—"}</div>
             </div>
-            <Sparkline data={r.sparkline} color={up ? t.red : t.emerald} />
-            <span className={`w-20 text-right text-sm font-semibold tabular-nums ${up ? "text-red-600 dark:text-red-400" : "text-emerald-700 dark:text-emerald-400"}`}>
+            <div className="hidden sm:block shrink-0">
+              <Sparkline data={r.sparkline} color={up ? t.red : t.emerald} />
+            </div>
+            <span className={`w-16 sm:w-20 shrink-0 text-right text-xs sm:text-sm font-semibold tabular-nums ${up ? "text-red-600 dark:text-red-400" : "text-emerald-700 dark:text-emerald-400"}`}>
               {r.change_7d != null ? `${r.change_7d > 0 ? "+" : ""}${r.change_7d.toFixed(1)}%` : "—"}
             </span>
           </button>

@@ -23,18 +23,18 @@ export function ChartCard({
   pad?: boolean;
 }) {
   return (
-    <div className={`card ${className}`}>
+    <div className={`card min-w-0 max-w-full ${className}`}>
       <div
-        className="flex items-start justify-between gap-3 border-b px-5 py-3.5"
+        className="flex flex-col sm:flex-row sm:items-start justify-between gap-2.5 sm:gap-3 border-b px-4 py-3 sm:px-5 sm:py-3.5 min-w-0 max-w-full"
         style={{ borderColor: "rgb(var(--ink-900) / 0.07)" }}
       >
         <div className="min-w-0">
           <h3 className="text-sm font-semibold text-ink-800">{title}</h3>
           {subtitle && <p className="mt-0.5 text-xs text-ink-500">{subtitle}</p>}
         </div>
-        {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
+        {actions && <div className="flex shrink-0 items-center gap-2 max-w-full overflow-x-auto min-w-0">{actions}</div>}
       </div>
-      <div className={pad ? "p-5" : ""}>{children}</div>
+      <div className={pad ? "p-3.5 sm:p-5 min-w-0 max-w-full" : "min-w-0 max-w-full"}>{children}</div>
     </div>
   );
 }

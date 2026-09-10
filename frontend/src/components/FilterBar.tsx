@@ -19,12 +19,12 @@ function Select({
   label: string;
 }) {
   return (
-    <label className="flex items-center gap-2 text-xs text-ink-500">
-      <span className="uppercase tracking-wide">{label}</span>
+    <label className="flex items-center gap-1.5 sm:gap-2 text-xs text-ink-500 min-w-0 max-w-full">
+      <span className="uppercase tracking-wide shrink-0">{label}</span>
       <select
         value={value ?? "ALL"}
         onChange={(e) => onChange(e.target.value === "ALL" ? null : e.target.value)}
-        className="h-8 rounded-lg border bg-surface px-2.5 text-sm text-ink-700 shadow-card outline-none transition-colors duration-150 hover:border-ink-300 focus:border-brand-500 focus:ring-1 focus:ring-brand-500"
+        className="h-8 rounded-lg border bg-surface px-2 sm:px-2.5 text-xs sm:text-sm text-ink-700 shadow-card outline-none transition-colors duration-150 hover:border-ink-300 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 max-w-[170px] sm:max-w-[220px] md:max-w-none truncate min-w-0"
         style={{ borderColor: "rgb(var(--ink-900) / 0.14)" }}
       >
         <option value="ALL">{placeholder}</option>
@@ -53,8 +53,8 @@ export function FilterBar() {
   }));
 
   return (
-    <div className="card flex flex-wrap items-center gap-3 px-4 py-2.5">
-      <span className="kpi-label">Filters</span>
+    <div className="card flex flex-wrap items-center gap-2.5 sm:gap-3 px-3.5 py-2.5 sm:px-4 max-w-full min-w-0">
+      <span className="kpi-label shrink-0">Filters</span>
       <Select label="Route" value={route} onChange={setRoute} options={routeOptions} placeholder="All routes" />
       <Select label="Airline" value={airline} onChange={setAirline} options={airlineOptions} placeholder="All airlines" />
       <Select
@@ -70,7 +70,7 @@ export function FilterBar() {
         ]}
         placeholder="All sources"
       />
-      <div className="ml-auto flex items-center gap-2">
+      <div className="ml-auto flex items-center gap-2 shrink-0">
         {hasFilters && (
           <button onClick={clear} className="btn btn-sm btn-secondary">
             <RotateCcw className="h-3 w-3" /> Clear

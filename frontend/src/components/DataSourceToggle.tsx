@@ -51,16 +51,17 @@ export function DataSourceToggle({ withCollectButton = true }: { withCollectButt
   }
 
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex items-center gap-1.5 sm:gap-2 shrink-0 min-w-0">
       {withCollectButton && (
         <button
           onClick={collectNow}
           disabled={collecting || busy}
           title="Run one collection sweep now (POST /api/collect/sweep)"
-          className="btn btn-sm btn-secondary hidden sm:inline-flex"
+          className="btn btn-sm btn-secondary hidden sm:inline-flex shrink-0"
         >
           {collecting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
-          {collecting ? "Collecting…" : "Collect now"}
+          <span className="hidden md:inline">{collecting ? "Collecting…" : "Collect now"}</span>
+          <span className="md:hidden">{collecting ? "…" : "Collect"}</span>
         </button>
       )}
 
@@ -76,14 +77,14 @@ export function DataSourceToggle({ withCollectButton = true }: { withCollectButt
             ? "Serving data collected by the scraper — click to switch back"
             : `${offlineHint} — click to serve scraped data`
         }
-        className={`group relative inline-flex select-none items-center rounded-lg border p-0.5 transition-colors ${
+        className={`group relative inline-flex select-none items-center rounded-lg border p-0.5 transition-colors shrink-0 ${
           locked ? "cursor-not-allowed opacity-60" : "cursor-pointer"
         } ${mode === "live" ? "border-emerald-300 bg-emerald-50" : "border-ink-200 bg-ink-100"}`}
       >
         {/* sliding knob */}
         <span
-          className={`absolute top-0.5 h-[26px] w-[86px] rounded-md bg-surface shadow-card ring-1 transition-transform duration-200 ${
-            mode === "live" ? "translate-x-[86px]" : "translate-x-0"
+          className={`absolute top-0.5 h-[26px] w-[76px] sm:w-[86px] rounded-md bg-surface shadow-card ring-1 transition-transform duration-200 ${
+            mode === "live" ? "translate-x-[76px] sm:translate-x-[86px]" : "translate-x-0"
           }`}
           style={{ "--tw-ring-color": "rgb(var(--ink-900) / 0.1)" } as React.CSSProperties}
           aria-hidden
@@ -94,12 +95,12 @@ export function DataSourceToggle({ withCollectButton = true }: { withCollectButt
             <span
               key={opt.id}
               title={opt.id === "demo" ? offlineHint : opt.hint}
-              className={`relative z-10 flex h-[26px] w-[86px] items-center justify-center gap-1.5 text-[11px] font-semibold transition-colors ${
+              className={`relative z-10 flex h-[26px] w-[76px] sm:w-[86px] items-center justify-center gap-1 sm:gap-1.5 text-[10.5px] sm:text-[11px] font-semibold transition-colors ${
                 active ? "text-ink-900" : "text-ink-500 group-hover:text-ink-600"
               }`}
             >
-              <opt.icon className={`h-3 w-3 ${opt.id === "live" && active ? "text-emerald-700" : ""}`} />
-              {opt.id === "demo" ? offlineLabel : opt.label}
+              <opt.icon className={`h-3 w-3 shrink-0 ${opt.id === "live" && active ? "text-emerald-700" : ""}`} />
+              <span className="truncate">{opt.id === "demo" ? offlineLabel : opt.label}</span>
             </span>
           );
         })}
@@ -109,18 +110,18 @@ export function DataSourceToggle({ withCollectButton = true }: { withCollectButt
       {/* A refused switch or a store that cannot persist is never silent. */}
       {(actionError || (!locked && storeAvailable === false)) && (
         <span
-          className="chip max-w-[280px] truncate bg-red-50 text-red-700"
+          className="chip max-w-[140px] sm:max-w-[240px] truncate bg-red-50 text-red-700"
           title={actionError ?? storeNote ?? "The collection store is unavailable on this deployment."}
         >
           <AlertTriangle className="h-3 w-3 shrink-0" />
-          {actionError ?? "collection store unavailable"}
+          <span className="truncate">{actionError ?? "collection store unavailable"}</span>
         </span>
       )}
 
       {/* Imported-data readout: what your files actually contain. */}
       {mode !== "live" && isCustom && (
         <span
-          className="chip hidden bg-sky-50 text-sky-700 md:inline-flex"
+          className="chip hidden lg:inline-flex"
           title={
             (dataFiles?.files ?? []).map((f) => `${f.name}: ${f.observations.toLocaleString("en-IN")} obs`).join("\n") ||
             "imported files"
@@ -134,22 +135,22 @@ export function DataSourceToggle({ withCollectButton = true }: { withCollectButt
       {/* Live-mode status readout: what the scraper has actually stored. */}
       {mode === "live" && (
         <span
-          className={`chip hidden md:inline-flex ${
+          className={`chip hidden lg:inline-flex ${
             isLive ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"
           }`}
           title={isLive ? `${stored.toLocaleString("en-IN")} observations in the collection store` : (note ?? "Nothing collected yet")}
         >
-          {!isLive && <AlertTriangle className="h-3 w-3" />}
+          {!isLive && <AlertTriangle className="h-3 w-3 shrink-0" />}
           {isLive ? (
             <>
-              <span className="relative flex h-1.5 w-1.5">
+              <span className="relative flex h-1.5 w-1.5 shrink-0">
                 <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
                 <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-500" />
               </span>
-              {stored.toLocaleString("en-IN")} obs · {counts?.days_collected ?? 0}d
+              <span>{stored.toLocaleString("en-IN")} obs · {counts?.days_collected ?? 0}d</span>
             </>
           ) : (
-            "waiting for first sweep"
+            <span>waiting for first sweep</span>
           )}
         </span>
       )}

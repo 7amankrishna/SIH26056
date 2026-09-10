@@ -24,10 +24,10 @@ function Formula({ math, label }: { math: string; label?: string }) {
   }
 
   return (
-    <figure className="rounded-xl border border-brand-100 bg-brand-50/50 px-4 py-5 text-center dark:border-brand-900/50 dark:bg-brand-950/20">
+    <figure className="rounded-xl border border-brand-100 bg-brand-50/50 px-4 py-5 text-center dark:border-brand-900/50 dark:bg-brand-950/20 min-w-0 max-w-full overflow-hidden">
       {label && <figcaption className="mb-3 text-left text-xs font-semibold uppercase tracking-wide text-brand-700">{label}</figcaption>}
-      <div className="overflow-x-auto text-ink-900" dangerouslySetInnerHTML={{ __html: markup }} />
-      <code className="mt-3 block overflow-x-auto text-left text-[11px] text-ink-500">\[{math}\]</code>
+      <div className="overflow-x-auto text-ink-900 max-w-full" dangerouslySetInnerHTML={{ __html: markup }} />
+      <code className="mt-3 block overflow-x-auto text-left text-[11px] text-ink-500 max-w-full">\[{math}\]</code>
     </figure>
   );
 }
@@ -49,18 +49,18 @@ export default function MethodologyPage() {
   const basePeriod = data?.base_period;
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-5 min-w-0 max-w-full">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h2 className="text-xl font-bold text-ink-900">Index Methodology</h2>
           <p className="text-sm text-ink-500">A transparent, route-weighted price index for high-frequency airfare observations.</p>
         </div>
-        <span className="chip bg-brand-50 text-brand-700">
+        <span className="chip bg-brand-50 text-brand-700 shrink-0">
           <Sigma className="h-3.5 w-3.5" /> {data?.version ?? "apix-1.0.0"}
         </span>
       </div>
 
-      <div className="flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+      <div className="flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900 min-w-0 max-w-full">
         <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-700" />
         <p>
           <strong>Prototype statistical series.</strong> APIx demonstrates a reproducible method for CPI augmentation research;
@@ -69,7 +69,7 @@ export default function MethodologyPage() {
       </div>
 
       <ChartCard title="Estimator" subtitle="The calculation performed for every published index value">
-        <div className="grid gap-4 xl:grid-cols-2">
+        <div className="grid gap-4 xl:grid-cols-2 min-w-0 max-w-full">
           <Formula
             label="Route-day representative fare"
             math={String.raw`p_{r,t}=\operatorname{median}\left\{f_i\;\middle|\; i\in\mathcal{I}_{r,t},\ q_i\in\{\mathrm{VALID},\mathrm{SUSPICIOUS}\}\right\}`}

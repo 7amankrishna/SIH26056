@@ -46,11 +46,11 @@ export function SkeletonTable({ rows = 6, cols = 5 }: { rows?: number; cols?: nu
 /** KPI strip placeholder. */
 export function SkeletonStats({ count = 6 }: { count?: number }) {
   return (
-    <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6" aria-hidden>
+    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6 sm:gap-4 min-w-0" aria-hidden>
       {Array.from({ length: count }).map((_, i) => (
-        <div key={i} className="card p-4">
-          <Skeleton className="h-2.5 w-16" />
-          <Skeleton className="mt-3 h-7 w-20" />
+        <div key={i} className="card p-3.5 sm:p-4 min-w-0">
+          <Skeleton className="h-2.5 w-16 max-w-full" />
+          <Skeleton className="mt-3 h-7 w-20 max-w-full" />
         </div>
       ))}
     </div>
