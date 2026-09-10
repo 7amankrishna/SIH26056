@@ -287,7 +287,7 @@
     @apply text-sm font-semibold uppercase tracking-wide text-ink-500;
   }
   .kpi-value {
-    @apply text-3xl font-bold tabular-nums text-ink-900;
+    @apply text-xl sm:text-2xl lg:text-3xl font-bold tabular-nums text-ink-900 leading-tight tracking-tight;
   }
   .kpi-label {
     @apply text-xs font-medium uppercase tracking-wide text-ink-500;

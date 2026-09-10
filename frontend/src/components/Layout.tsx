@@ -80,18 +80,32 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
       </div>
 
       {/* Government / statistical identity */}
-      <div className="border-t border-white/10 px-4 py-3 shrink-0 bg-black/15">
-        <div className="flex items-center gap-3">
+      <div className="border-t border-white/10 p-3.5 sm:p-4 shrink-0 bg-gradient-to-b from-black/25 to-black/40">
+        <div className="flex items-center gap-3 sm:gap-3.5 rounded-xl border border-white/10 bg-white/[0.04] p-2.5 sm:p-3 shadow-inner">
           <img 
             src="https://upload.wikimedia.org/wikipedia/commons/5/55/Emblem_of_India.svg" 
             alt="Government of India"
-            className="h-8 w-auto opacity-75 shrink-0"
+            className="h-10 w-auto sm:h-12 opacity-95 shrink-0 transition-transform duration-200 hover:scale-105"
             style={{ filter: "brightness(0) invert(1)" }}
           />
-          <div className="min-w-0 text-[10.5px] leading-snug text-[#93a5c4]">
-            <p className="font-semibold text-white/90">Ministry of Statistics (MoSPI)</p>
-            <p className="text-[9.5px] text-[#8598be]">CPI Augmentation Prototype</p>
-            <p className="text-[9px] text-[#6d7e9f]">v0.1.0 · SIH26056</p>
+          <div className="min-w-0 flex-1 leading-snug">
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <span className="text-[10px] sm:text-xs font-semibold uppercase tracking-wider text-cyan-400">
+                MoSPI
+              </span>
+              <span className="rounded bg-white/10 px-1.5 py-0.2 text-[9px] font-mono font-medium text-[#93a5c4]">
+                SIH26056
+              </span>
+            </div>
+            <p className="text-xs sm:text-sm font-bold text-white tracking-tight mt-0.5">
+              Ministry of Statistics
+            </p>
+            <p className="text-[10px] sm:text-xs text-[#93a5c4] font-medium leading-tight">
+              CPI Augmentation Prototype
+            </p>
+            <p className="text-[9px] sm:text-[10px] text-[#6d7e9f] font-mono mt-0.5">
+              v0.1.0 · Prototype Release
+            </p>
           </div>
         </div>
       </div>

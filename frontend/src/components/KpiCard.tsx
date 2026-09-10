@@ -39,7 +39,7 @@ export function KpiCard({
           {loading ? (
             <Skeleton className="mt-2 h-8 w-24 max-w-full" />
           ) : (
-            <p className="kpi-value mt-1 truncate">{value}</p>
+            <div className="kpi-value mt-1 break-words leading-tight">{value}</div>
           )}
           {sub && <div className="mt-1 text-xs text-ink-500 truncate">{sub}</div>}
         </div>

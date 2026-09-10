@@ -1,6 +1,7 @@
 // Headline APIx time-series chart with range controls.
 
 import { useMemo, useState } from "react";
+import { AlertCircle, Calendar, Info } from "lucide-react";
 import {
   Area,
   AreaChart,
@@ -12,17 +13,17 @@ import {
   YAxis,
 } from "recharts";
 import { ChartCard, ChartTooltip } from "../ChartCard";
-import { useTrend } from "../../hooks/useApi";
+import { useOverview, useTrend } from "../../hooks/useApi";
 import { useChartTheme } from "../../hooks/useChartTheme";
 import { DataBoundary } from "../DataState";
 import { formatIndex, shortDate } from "../../lib/format";
 
 const RANGES = [
-  { key: "7d", label: "7D" },
-  { key: "30d", label: "30D" },
-  { key: "90d", label: "90D" },
-  { key: "6m", label: "6M" },
-  { key: "1y", label: "1Y" },
+  { key: "7d", label: "7D", days: 7 },
+  { key: "30d", label: "30D", days: 30 },
+  { key: "90d", label: "90D", days: 90 },
+  { key: "6m", label: "6M", days: 180 },
+  { key: "1y", label: "1Y", days: 365 },
 ];
 
 export function IndexTrendChart({ title, subtitle, defaultRange = "90d", showRanges = true }: {
@@ -34,6 +35,7 @@ export function IndexTrendChart({ title, subtitle, defaultRange = "90d", showRan
   const [range, setRange] = useState(defaultRange);
   const t = useChartTheme();
   const { data, isLoading, isError, error } = useTrend(range);
+  const { data: overview } = useOverview();
 
   const chartData = useMemo(
     () =>
@@ -50,42 +52,78 @@ export function IndexTrendChart({ title, subtitle, defaultRange = "90d", showRan
   const current = data?.current;
   const change7d = data?.change_7d;
 
+  // Available data window bounds from backend
+  const seriesStart = chartData.length > 0 ? chartData[0].date : null;
+  const seriesEnd = chartData.length > 0 ? chartData[chartData.length - 1].date : null;
+  const periodStart = overview?.data_period?.start ?? seriesStart;
+  const periodEnd = overview?.data_period?.end ?? seriesEnd;
+  const totalDays = chartData.length;
+
+  const activeRangeObj = RANGES.find((r) => r.key === range);
+  const isCapped = Boolean(activeRangeObj && activeRangeObj.days > totalDays && totalDays > 0);
+
   return (
     <ChartCard
       title={title ?? "Airfare Price Index"}
-      subtitle={subtitle ?? `Base period ${data?.base_period?.start ?? "—"} → ${data?.base_period?.end ?? "—"}`}
+      subtitle={
+        subtitle ?? (
+          <span className="flex items-center gap-1.5 flex-wrap">
+            <span>Base period {data?.base_period?.start ?? "—"} → {data?.base_period?.end ?? "—"}</span>
+            {periodStart && periodEnd && (
+              <span className="inline-flex items-center gap-1 rounded-md bg-ink-100 dark:bg-white/10 px-2 py-0.5 text-[11px] font-medium text-ink-600 dark:text-ink-300">
+                <Calendar className="h-3 w-3 text-cyan-600 dark:text-cyan-400" />
+                Available data: {shortDate(periodStart)} – {shortDate(periodEnd)} ({totalDays} days)
+              </span>
+            )}
+          </span>
+        )
+      }
       actions={
         showRanges ? (
-          <div className="seg" role="group" aria-label="Index range">
-            {RANGES.map((r) => (
-              <button
-                key={r.key}
-                onClick={() => setRange(r.key)}
-                aria-pressed={range === r.key}
-                className={`seg-item ${range === r.key ? "seg-item-active" : ""}`}
-              >
-                {r.label}
-              </button>
-            ))}
+          <div className="flex items-center gap-2 flex-wrap justify-end">
+            <div className="seg" role="group" aria-label="Index range">
+              {RANGES.map((r) => (
+                <button
+                  key={r.key}
+                  onClick={() => setRange(r.key)}
+                  aria-pressed={range === r.key}
+                  className={`seg-item ${range === r.key ? "seg-item-active" : ""}`}
+                >
+                  {r.label}
+                </button>
+              ))}
+            </div>
           </div>
         ) : null
       }
     >
-      <div className="mb-3 flex flex-wrap items-center gap-x-5 gap-y-1">
-        <div>
-          <span className="text-2xl font-bold tabular-nums text-ink-900">
-            {current != null ? formatIndex(current) : "—"}
-          </span>
-          <span className="ml-2 text-xs text-ink-500">index value</span>
-        </div>
-        {change7d != null && (
-          <span className="text-xs text-ink-500">
-            7d change{" "}
-            <span className={change7d > 0 ? "font-semibold text-red-600 dark:text-red-400" : "font-semibold text-emerald-700 dark:text-emerald-400"}>
-              {change7d > 0 ? "+" : ""}
-              {change7d.toFixed(1)}%
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-x-5 gap-y-2">
+        <div className="flex flex-wrap items-center gap-x-5 gap-y-1">
+          <div>
+            <span className="text-2xl font-bold tabular-nums text-ink-900">
+              {current != null ? formatIndex(current) : "—"}
             </span>
-          </span>
+            <span className="ml-2 text-xs text-ink-500">index value</span>
+          </div>
+          {change7d != null && (
+            <span className="text-xs text-ink-500">
+              7d change{" "}
+              <span className={change7d > 0 ? "font-semibold text-red-600 dark:text-red-400" : "font-semibold text-emerald-700 dark:text-emerald-400"}>
+                {change7d > 0 ? "+" : ""}
+                {change7d.toFixed(1)}%
+              </span>
+            </span>
+          )}
+        </div>
+
+        {/* Depict data restriction when range selection exceeds available historical time period */}
+        {isCapped && (
+          <div className="inline-flex items-center gap-1.5 rounded-lg border border-amber-200 bg-amber-50/80 px-2.5 py-1 text-[11px] text-amber-800 dark:border-amber-900/40 dark:bg-amber-950/40 dark:text-amber-300">
+            <AlertCircle className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
+            <span>
+              Restricted to available window ({totalDays} days). Historical data prior to {periodStart ? shortDate(periodStart) : "recorded start"} is not accrued.
+            </span>
+          </div>
         )}
       </div>
       <div className="h-[320px]">
