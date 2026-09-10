@@ -137,7 +137,7 @@ export function Layout() {
     : null;
 
   return (
-    <div className="flex h-full min-h-screen bg-page w-full max-w-full">
+    <div className="flex min-h-screen bg-page w-full max-w-full">
       <a
         href="#main"
         className="sr-only focus:not-sr-only focus:absolute focus:left-3 focus:top-3 focus:z-[70] focus:rounded-lg focus:bg-surface focus:px-3 focus:py-2 focus:text-sm focus:font-medium focus:text-ink-900 focus:shadow-overlay"
