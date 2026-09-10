@@ -20,8 +20,9 @@ import { IndexTrendChart } from "../components/charts/IndexTrendChart";
 import { RouteHeatmap } from "../components/RouteHeatmap";
 import { Sparkline } from "../components/Sparkline";
 import { FilterBar } from "../components/FilterBar";
-import { useOverview, useRoutes } from "../hooks/useApi";
+import { useAirlines, useLeadTime, useOverview, useRoutes } from "../hooks/useApi";
 import { useChartTheme } from "../hooks/useChartTheme";
+import { useFilters } from "../hooks/useFilters";
 import { usePageTitle } from "../hooks/usePageTitle";
 import { formatIndex, formatINR, formatNumber, formatPercent } from "../lib/format";
 
@@ -29,8 +30,15 @@ export default function Overview() {
   const navigate = useNavigate();
   const t = useChartTheme();
   usePageTitle("Overview");
+  const { route, airline, source } = useFilters();
   const { data: overview, isLoading, isError, error } = useOverview();
   const { data: routesData } = useRoutes();
+  const { data: leadTimeData, isLoading: isLeadTimeLoading } = useLeadTime({
+    route: route ?? undefined,
+    airline: airline ?? undefined,
+    source: source ?? undefined,
+  });
+  const { data: airlinesData, isLoading: isAirlinesLoading } = useAirlines(route ?? undefined);
 
   const routes = routesData?.routes ?? [];
   const topUp = routes.filter((r) => (r.change_7d ?? 0) > 0).slice(0, 4);
@@ -38,6 +46,26 @@ export default function Overview() {
     .filter((r) => (r.change_7d ?? 0) < 0)
     .sort((a, b) => (a.change_7d ?? 0) - (b.change_7d ?? 0))
     .slice(0, 3);
+
+  // Dynamic Lead Time data from API / data store
+  const leadTimeChartData = (leadTimeData?.series ?? []).map((s) => ({
+    label: s.label,
+    fare: Math.round(s.avg_fare),
+    observations: s.observations,
+  }));
+
+  // Dynamic Airline Comparison data from API / data store
+  const airlineChartData = (airlinesData?.airlines ?? [])
+    .filter((a) => a.observations > 0 && a.avg_fare != null)
+    .map((a, i) => {
+      const colors = ["#3b82f6", "#ef4444", "#f97316", "#ea580c", "#a855f7", "#06b6d4", "#10b981", "#64748b"];
+      return {
+        name: a.airline,
+        fullName: a.name,
+        fare: Math.round(a.avg_fare ?? 0),
+        color: colors[i % colors.length],
+      };
+    });
 
   const deltaColor = (v: number | null | undefined) =>
     v == null ? "text-ink-500" : v > 0 ? "text-red-600" : v < 0 ? "text-emerald-700" : "text-ink-500";
@@ -125,197 +153,123 @@ export default function Overview() {
         <RouteRanking title="Routes with Largest Price Movement · Decreases" routes={topDown} down />
       </div>
 
-      {/* Bottom Row from Reference: Lead Time, Airline Comparison, Collection Health */}
-      <div className="grid grid-cols-1 gap-4 sm:gap-5 lg:grid-cols-3 min-w-0 max-w-full">
+      {/* Bottom Row: Lead Time & Airline Comparison powered by live data */}
+      <div className="grid grid-cols-1 gap-4 sm:gap-5 lg:grid-cols-2 min-w-0 max-w-full">
         {/* Average Fare by Lead Time */}
         <div className="card min-w-0 max-w-full p-4 sm:p-5">
-          <div className="mb-4">
-            <h3 className="text-sm font-semibold text-ink-800">Average Fare by Lead Time</h3>
-            <p className="mt-0.5 text-xs text-ink-500">How prices change with advance booking</p>
+          <div className="mb-4 flex items-center justify-between">
+            <div>
+              <h3 className="text-sm font-semibold text-ink-800">Average Fare by Lead Time</h3>
+              <p className="mt-0.5 text-xs text-ink-500">How prices change with advance booking</p>
+            </div>
+            <button
+              onClick={() => navigate("/lead-time")}
+              className="text-xs font-semibold text-sky-600 hover:text-sky-700 inline-flex items-center gap-1 shrink-0"
+            >
+              Drill down &rarr;
+            </button>
           </div>
-          <div className="h-52 w-full min-w-0 max-w-full overflow-hidden">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart
-                data={[
-                  { label: "T+1", fare: 8420 },
-                  { label: "T+7", fare: 7120 },
-                  { label: "T+15", fare: 6480 },
-                  { label: "T+30", fare: 5920 },
-                  { label: "T+45", fare: 5740 },
-                ]}
-                margin={{ top: 18, right: 10, left: -20, bottom: 0 }}
-              >
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(150,150,150,0.15)" />
-                <XAxis dataKey="label" tick={{ fontSize: 11, fill: "#64748b" }} axisLine={false} tickLine={false} />
-                <YAxis
-                  tick={{ fontSize: 10, fill: "#64748b" }}
-                  axisLine={false}
-                  tickLine={false}
-                  tickFormatter={(v) => `₹${v.toLocaleString()}`}
-                  domain={[0, 10000]}
-                  ticks={[0, 5000, 10000]}
-                />
-                <Tooltip
-                  formatter={(val: number) => [`₹${val.toLocaleString()}`, "Avg Fare"]}
-                  contentStyle={{
-                    backgroundColor: "rgba(15, 23, 42, 0.9)",
-                    borderRadius: "8px",
-                    color: "#fff",
-                    fontSize: "12px",
-                  }}
-                />
-                <Bar dataKey="fare" fill="#38bdf8" radius={[4, 4, 0, 0]}>
-                  <LabelList
-                    dataKey="fare"
-                    position="top"
-                    formatter={(val: number) => `₹${val.toLocaleString()}`}
-                    style={{ fontSize: "10px", fill: "#334155", fontWeight: 600 }}
+          <div className="h-56 w-full min-w-0 max-w-full overflow-hidden">
+            {leadTimeChartData.length === 0 ? (
+              <div className="flex h-full items-center justify-center text-xs text-ink-400">
+                {isLeadTimeLoading ? "Loading lead time data..." : "No lead time observations available."}
+              </div>
+            ) : (
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart
+                  data={leadTimeChartData}
+                  margin={{ top: 18, right: 10, left: -15, bottom: 0 }}
+                >
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={t.grid} />
+                  <XAxis dataKey="label" tick={{ fontSize: 11, fill: t.tick }} axisLine={false} tickLine={false} />
+                  <YAxis
+                    tick={{ fontSize: 10, fill: t.tick }}
+                    axisLine={false}
+                    tickLine={false}
+                    tickFormatter={(v) => `₹${v.toLocaleString("en-IN")}`}
                   />
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
+                  <Tooltip
+                    formatter={(val: number) => [`₹${val.toLocaleString("en-IN")}`, "Avg Fare"]}
+                    contentStyle={{
+                      backgroundColor: "rgba(15, 23, 42, 0.9)",
+                      borderRadius: "8px",
+                      color: "#fff",
+                      fontSize: "12px",
+                    }}
+                  />
+                  <Bar dataKey="fare" fill={t.brand} radius={[4, 4, 0, 0]}>
+                    <LabelList
+                      dataKey="fare"
+                      position="top"
+                      formatter={(val: number) => `₹${val.toLocaleString("en-IN")}`}
+                      style={{ fontSize: "10px", fill: t.tick, fontWeight: 600 }}
+                    />
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            )}
           </div>
         </div>
 
         {/* Airline Price Comparison */}
         <div className="card min-w-0 max-w-full p-4 sm:p-5">
-          <div className="mb-4">
-            <h3 className="text-sm font-semibold text-ink-800">Airline Price Comparison</h3>
-            <p className="mt-0.5 text-xs text-ink-500">Average normalized fare (last 30 days)</p>
-          </div>
-          <div className="h-52 w-full min-w-0 max-w-full overflow-hidden">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart
-                data={[
-                  { name: "IndiGo", fare: 6240, color: "#3b82f6" },
-                  { name: "Air India", fare: 6890, color: "#ef4444" },
-                  { name: "Akasa Air", fare: 5980, color: "#f97316" },
-                  { name: "SpiceJet", fare: 5760, color: "#ea580c" },
-                  { name: "Vistara", fare: 7120, color: "#a855f7" },
-                  { name: "Others", fare: 6340, color: "#94a3b8" },
-                ]}
-                margin={{ top: 18, right: 10, left: -20, bottom: 0 }}
-              >
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(150,150,150,0.15)" />
-                <XAxis dataKey="name" tick={{ fontSize: 10, fill: "#64748b" }} axisLine={false} tickLine={false} />
-                <YAxis
-                  tick={{ fontSize: 10, fill: "#64748b" }}
-                  axisLine={false}
-                  tickLine={false}
-                  tickFormatter={(v) => `₹${v.toLocaleString()}`}
-                  domain={[0, 10000]}
-                  ticks={[0, 5000, 10000]}
-                />
-                <Tooltip
-                  formatter={(val: number) => [`₹${val.toLocaleString()}`, "Normalized Fare"]}
-                  contentStyle={{
-                    backgroundColor: "rgba(15, 23, 42, 0.9)",
-                    borderRadius: "8px",
-                    color: "#fff",
-                    fontSize: "12px",
-                  }}
-                />
-                <Bar dataKey="fare" radius={[4, 4, 0, 0]}>
-                  <LabelList
-                    dataKey="fare"
-                    position="top"
-                    formatter={(val: number) => `₹${val.toLocaleString()}`}
-                    style={{ fontSize: "10px", fill: "#334155", fontWeight: 600 }}
-                  />
-                  {[
-                    "#3b82f6",
-                    "#ef4444",
-                    "#f97316",
-                    "#ea580c",
-                    "#a855f7",
-                    "#94a3b8",
-                  ].map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={entry} />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-
-        {/* Data Collection Health */}
-        <div className="card min-w-0 max-w-full p-4 sm:p-5">
           <div className="mb-4 flex items-center justify-between">
             <div>
-              <h3 className="text-sm font-semibold text-ink-800">Data Collection Health</h3>
-              <p className="mt-0.5 text-xs text-ink-500">Source status and success rate (last 24h)</p>
+              <h3 className="text-sm font-semibold text-ink-800">Airline Price Comparison</h3>
+              <p className="mt-0.5 text-xs text-ink-500">Average observed airfare by carrier</p>
             </div>
             <button
-              onClick={() => navigate("/collection")}
-              className="text-xs font-semibold text-sky-600 hover:text-sky-700 inline-flex items-center gap-1"
+              onClick={() => navigate("/airlines")}
+              className="text-xs font-semibold text-sky-600 hover:text-sky-700 inline-flex items-center gap-1 shrink-0"
             >
-              View All &rarr;
+              All airlines &rarr;
             </button>
           </div>
-
-          <div className="overflow-x-auto min-w-0 max-w-full">
-            <table className="w-full text-left text-xs">
-              <thead>
-                <tr className="border-b border-ink-100 text-[11px] font-medium text-ink-500">
-                  <th className="pb-2.5 font-medium">Source</th>
-                  <th className="pb-2.5 font-medium">Status</th>
-                  <th className="pb-2.5 font-medium">Success Rate</th>
-                  <th className="pb-2.5 text-right font-medium">Observations</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-ink-100 text-ink-700">
-                <tr>
-                  <td className="py-2.5 font-medium text-ink-900">Mock (Demo)</td>
-                  <td className="py-2.5">
-                    <span className="inline-flex items-center gap-1.5 text-emerald-600 font-medium">
-                      <span className="h-2 w-2 rounded-full bg-emerald-500"></span> Healthy
-                    </span>
-                  </td>
-                  <td className="py-2.5">100%</td>
-                  <td className="py-2.5 text-right font-semibold text-ink-900">4,821</td>
-                </tr>
-                <tr>
-                  <td className="py-2.5 font-medium text-ink-900">Ixigo (PoC)</td>
-                  <td className="py-2.5">
-                    <span className="inline-flex items-center gap-1.5 text-amber-600 font-medium">
-                      <span className="h-2 w-2 rounded-full bg-amber-500"></span> Disabled
-                    </span>
-                  </td>
-                  <td className="py-2.5 text-ink-400">—</td>
-                  <td className="py-2.5 text-right text-ink-400">—</td>
-                </tr>
-                <tr>
-                  <td className="py-2.5 font-medium text-ink-900">Airline A</td>
-                  <td className="py-2.5">
-                    <span className="inline-flex items-center gap-1.5 text-emerald-600 font-medium">
-                      <span className="h-2 w-2 rounded-full bg-emerald-500"></span> Ready
-                    </span>
-                  </td>
-                  <td className="py-2.5 text-ink-400">—</td>
-                  <td className="py-2.5 text-right text-ink-400">—</td>
-                </tr>
-                <tr>
-                  <td className="py-2.5 font-medium text-ink-900">Airline B</td>
-                  <td className="py-2.5">
-                    <span className="inline-flex items-center gap-1.5 text-emerald-600 font-medium">
-                      <span className="h-2 w-2 rounded-full bg-emerald-500"></span> Ready
-                    </span>
-                  </td>
-                  <td className="py-2.5 text-ink-400">—</td>
-                  <td className="py-2.5 text-right text-ink-400">—</td>
-                </tr>
-                <tr>
-                  <td className="py-2.5 font-medium text-ink-900">OTA C</td>
-                  <td className="py-2.5">
-                    <span className="inline-flex items-center gap-1.5 text-slate-400 font-medium">
-                      <span className="h-2 w-2 rounded-full bg-slate-300"></span> Not Configured
-                    </span>
-                  </td>
-                  <td className="py-2.5 text-ink-400">—</td>
-                  <td className="py-2.5 text-right text-ink-400">—</td>
-                </tr>
-              </tbody>
-            </table>
+          <div className="h-56 w-full min-w-0 max-w-full overflow-hidden">
+            {airlineChartData.length === 0 ? (
+              <div className="flex h-full items-center justify-center text-xs text-ink-400">
+                {isAirlinesLoading ? "Loading airline data..." : "No airline observations available."}
+              </div>
+            ) : (
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart
+                  data={airlineChartData}
+                  margin={{ top: 18, right: 10, left: -15, bottom: 0 }}
+                >
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={t.grid} />
+                  <XAxis dataKey="name" tick={{ fontSize: 10, fill: t.tick }} axisLine={false} tickLine={false} />
+                  <YAxis
+                    tick={{ fontSize: 10, fill: t.tick }}
+                    axisLine={false}
+                    tickLine={false}
+                    tickFormatter={(v) => `₹${v.toLocaleString("en-IN")}`}
+                  />
+                  <Tooltip
+                    formatter={(val: number, _name: string, props: any) => [
+                      `₹${val.toLocaleString("en-IN")}`,
+                      props?.payload?.fullName || "Avg Fare",
+                    ]}
+                    contentStyle={{
+                      backgroundColor: "rgba(15, 23, 42, 0.9)",
+                      borderRadius: "8px",
+                      color: "#fff",
+                      fontSize: "12px",
+                    }}
+                  />
+                  <Bar dataKey="fare" radius={[4, 4, 0, 0]}>
+                    <LabelList
+                      dataKey="fare"
+                      position="top"
+                      formatter={(val: number) => `₹${val.toLocaleString("en-IN")}`}
+                      style={{ fontSize: "10px", fill: t.tick, fontWeight: 600 }}
+                    />
+                    {airlineChartData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={entry.color} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            )}
           </div>
         </div>
       </div>
