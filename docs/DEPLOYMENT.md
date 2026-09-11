@@ -244,7 +244,13 @@ Backend (prefix `APIX_`):
 - `APIX_COLLECTOR_ENABLED` — default `1` locally, `0` on a serverless runtime
   (there is no process to keep a loop alive).
 - `APIX_COLLECTOR_SOURCES` — default `fixture` (offline capture). Also
-  `fixture_html`, `amadeus`, `http_json`, `http_html`.
+  `fixture_html`, `amadeus`, `http_json`, `http_html`, and the OTA browser
+  scrapers `ota_cleartrip` / `ota_easemytrip` (Playwright; see
+  [`docs/INTEGRATION_PLAN_ANKIT_SCRAPER.md`](INTEGRATION_PLAN_ANKIT_SCRAPER.md)).
+- `APIX_OTA_HEADLESS` — default `1`. `0` shows the browser window (needs a
+  display; keep headless in Docker/CI).
+- `APIX_OTA_TIMEOUT_MS` — default `60000`. Per-page navigation timeout for the
+  OTA scrapers.
 - `APIX_REQUEST_SWEEP_BUDGET_SECONDS` — default `45`. Wall-clock budget for a
   sweep that has to finish inside one request; keep it under `maxDuration`.
 - `APIX_DB_CONNECT_TIMEOUT_SECONDS` — default `5`.
@@ -280,6 +286,25 @@ Verified against a real PostgreSQL by `backend/tests/test_postgres_store.py`
 (opt-in: set `APIX_TEST_DATABASE_URL` to a scratch database and it applies that
 same schema file, then round-trips state, runs, raw payloads, observations,
 duplicate handling, the date-window queries and reset).
+
+### OTA scrapers → Supabase
+
+The Cleartrip / EaseMyTrip browser scrapers write into the **same** Supabase
+tables — no separate pipeline. Set `APIX_COLLECTOR_SOURCES` to include
+`ota_cleartrip,ota_easemytrip`, point `DATABASE_URL` at Supabase, install the
+browser once (`python -m playwright install chromium`), then run a sweep
+(`POST /api/collect/sweep`) or flip the dashboard toggle to *live*. Observed
+fares land in `observations`, the response bytes in `raw_payloads`, and each
+sweep in `collection_runs` — all queryable from the Supabase SQL Editor.
+
+```bash
+cp .env.example .env   # set DATABASE_URL to your Supabase connection string
+docker compose -f docker-compose.supabase.yml up --build
+```
+
+`backend/tests/test_ota_extractors.py` covers the parsing against captured
+fixtures; the live scrape itself needs a real browser + OTA egress, so run it
+on a machine/CI with both (Docker with `ENABLE_OTA=1` is the easy path).
 
 If you outgrow that thin wrapper:
 
