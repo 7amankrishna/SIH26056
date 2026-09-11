@@ -20,11 +20,12 @@ import datetime as dt
 import json
 import sqlite3
 import threading
+import time
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable, Optional
-from urllib.parse import urlsplit
+from urllib.parse import urlsplit, urlunsplit
 
 try:
     import psycopg2
@@ -75,6 +76,59 @@ def _ignore_database_url() -> bool:
     return value.lower() in {"1", "true", "yes", "on"}
 
 
+#: Seconds between re-tries of a store that failed for a *transient* reason.
+DB_RETRY_SECONDS = float(os.getenv("APIX_DB_RETRY_SECONDS", "15"))
+
+#: Query parameters that are client-library hints rather than libpq options.
+#: Supabase's pooler hands out ``…?pgbouncer=true&connect_timeout=15``; libpq
+#: rejects any key it does not know ("invalid URI query parameter"), so a URL
+#: that is perfectly correct for a JS or Go driver takes the whole store down
+#: here. Dropping a pure hint is safe — it changes no connection behaviour.
+_NON_LIBPQ_URL_PARAMS = ("pgbouncer",)
+
+
+def _strip_wrapper_quotes(value: str) -> str:
+    """Drop quotes a copy/paste left around the value (``"postgres://…"``)."""
+    text = value.strip()
+    while len(text) >= 2 and text[0] == text[-1] and text[0] in {'"', "'"}:
+        text = text[1:-1].strip()
+    return text
+
+
+def _drop_client_hints(database_url: str, parsed: Any) -> tuple[str, list[str]]:
+    """Remove client-hint-only query parameters libpq would refuse outright."""
+    if not parsed.query:
+        return database_url, []
+    kept: list[str] = []
+    dropped: list[str] = []
+    for part in parsed.query.split("&"):
+        if not part:
+            continue
+        key = part.split("=", 1)[0].strip().lower()
+        (dropped if key in _NON_LIBPQ_URL_PARAMS else kept).append(part)
+    if not dropped:
+        return database_url, []
+    rebuilt = urlunsplit(parsed._replace(query="&".join(kept)))
+    return rebuilt, sorted({p.split("=", 1)[0] for p in dropped})
+
+
+def redact_credentials(text: str, database_url: Optional[str]) -> str:
+    """Make a driver message safe to surface: no password, one line, bounded.
+
+    The store has to say *why* the database is unreachable — "OperationalError"
+    on its own is undiagnosable — without ever echoing the connection string.
+    """
+    message = " ".join(str(text or "").split())
+    if database_url:
+        try:
+            password = urlsplit(database_url).password
+        except ValueError:
+            password = None
+        if password:
+            message = message.replace(password, "***")
+    return message[:300] or type(text).__name__
+
+
 POSTGRES_STORE_HINT = (
     "For durable collection history, set DATABASE_URL to a PostgreSQL database "
     "(and ensure APIX_IGNORE_DATABASE_URL is not set to 1)."
@@ -86,9 +140,20 @@ EPHEMERAL_STORE_NOTE = (
 )
 
 
-def validate_database_url(value: str) -> str:
-    """Validate a psycopg2 connection URI or keyword DSN without exposing it."""
-    database_url = value.strip()
+def normalize_database_url(value: str) -> tuple[str, list[str]]:
+    """Validate a psycopg2 connection URI or keyword DSN without exposing it.
+
+    Returns the URL to hand to the driver plus human-readable notes about
+    anything that was repaired on the way (a wrapper quote, a client-only query
+    parameter). Raises :class:`StoreConfigurationError` with an *actionable*
+    message otherwise: the whole store is disabled when this fails, so "not a
+    valid PostgreSQL URL" is not good enough — the message has to say which
+    paste mistake happened and what to type instead.
+    """
+    database_url = _strip_wrapper_quotes(value)
+    notes: list[str] = []
+    if database_url != value.strip():
+        notes.append("Removed surrounding quotes from DATABASE_URL.")
     if not database_url:
         raise StoreConfigurationError("DATABASE_URL must not be empty.")
 
@@ -96,11 +161,40 @@ def validate_database_url(value: str) -> str:
         parsed = urlsplit(database_url)
         if parsed.scheme.lower() not in {"postgres", "postgresql"}:
             raise StoreConfigurationError(
-                "DATABASE_URL must be a PostgreSQL connection URL."
+                f"DATABASE_URL must be a PostgreSQL connection URL, got scheme "
+                f"'{parsed.scheme or '?'}://' (expected 'postgresql://')."
             )
         if not parsed.netloc and not parsed.path:
             raise StoreConfigurationError("DATABASE_URL is not a valid PostgreSQL URL.")
-        return database_url
+        if parsed.netloc and not parsed.hostname:
+            raise StoreConfigurationError(
+                "DATABASE_URL has no host. Expected "
+                "'postgresql://USER:PASSWORD@HOST:PORT/DATABASE'."
+            )
+        # An unescaped '@', '/' or ':' in the password truncates the authority,
+        # which surfaces as a nonsense port or host instead of an auth error.
+        try:
+            parsed.port
+        except ValueError as exc:
+            raise StoreConfigurationError(
+                f"DATABASE_URL has an unreadable port ({exc}). This is almost always a "
+                "password containing '@', ':' or '/' that must be percent-encoded "
+                "('@' -> %40, ':' -> %3A, '/' -> %2F)."
+            ) from exc
+        if "@" in (parsed.path or ""):
+            raise StoreConfigurationError(
+                "DATABASE_URL is truncated: an unescaped '@' or '/' in the password ends the "
+                "authority early. Percent-encode those characters in the password "
+                "('@' -> %40, ':' -> %3A, '/' -> %2F)."
+            )
+        database_url, dropped = _drop_client_hints(database_url, parsed)
+        if dropped:
+            notes.append(
+                "Ignored unsupported DATABASE_URL parameter(s): "
+                + ", ".join(dropped)
+                + " (client hints that libpq rejects; the connection is unchanged without them)."
+            )
+        return database_url, notes
 
     # psycopg2 also accepts keyword DSNs such as "dbname=app host=db user=...".
     # Reject filesystem paths and opaque values before handing them to the driver.
@@ -115,10 +209,17 @@ def validate_database_url(value: str) -> str:
     try:
         parsed_dsn = psycopg2.extensions.parse_dsn(database_url)
     except Exception as exc:
-        raise StoreConfigurationError("DATABASE_URL is not a valid PostgreSQL DSN.") from exc
+        raise StoreConfigurationError(
+            f"DATABASE_URL is not a valid PostgreSQL DSN ({redact_credentials(exc, database_url)})."
+        ) from exc
     if not parsed_dsn.get("dbname") and not parsed_dsn.get("service"):
         raise StoreConfigurationError("DATABASE_URL DSN must specify a database.")
-    return database_url
+    return database_url, notes
+
+
+def validate_database_url(value: str) -> str:
+    """Validate a connection string, returning the URL the driver should get."""
+    return normalize_database_url(value)[0]
 
 OBS_COLUMNS = (
     "observation_id", "source", "origin", "destination", "route", "departure_date",
@@ -305,7 +406,17 @@ class Store:
 
     def __init__(self, path: Optional[Path] = None):
         self._write_lock = threading.Lock()
+        # Separate lock for reconnection: ``_init`` (called from a retry) takes
+        # ``_write_lock`` itself, and threading.Lock is not reentrant.
+        self._reconnect_lock = threading.Lock()
         self._unavailable_reason: Optional[str] = None
+        #: True when the failure was a *reachability* problem worth retrying
+        #: (a cold start that raced a database blip), as opposed to a
+        #: configuration error that retrying cannot fix.
+        self._unavailable_is_transient = False
+        self._last_attempt = 0.0
+        #: Human-readable repairs made to DATABASE_URL (dropped client hints…).
+        self.url_notes: list[str] = []
         #: True when SQLite is standing in for durable storage on a hosted runtime.
         self.ephemeral = False
         self.ignore_database_url = _ignore_database_url()
@@ -320,21 +431,29 @@ class Store:
             # unreachable PostgreSQL must become a visible capability failure,
             # never a process-wide 500 that makes the dashboard look blank.
             self._unavailable_reason = str(exc)
+            self._unavailable_is_transient = isinstance(exc, StoreConnectionError)
             if self.backend != "postgresql":
                 self.backend = "unavailable"
+        finally:
+            self._last_attempt = time.monotonic()
+
+    #: ``path`` handed to :meth:`_configure`, kept so a retry rebuilds the same store.
+    _configured_path: Optional[Path] = None
 
     def _configure(self, path: Optional[Path]) -> None:
         # Decide before reading, validating or connecting: even a valid-looking
         # but unreachable DATABASE_URL must not disable the Vercel demo.
+        self._configured_path = path
         configured_url = "" if self.ignore_database_url else os.environ.get("DATABASE_URL", "").strip()
         if configured_url:
             # When PostgreSQL is enabled, retain fail-closed behaviour: a broken
             # durable store must not silently become an ephemeral one.
-            self.db_url = validate_database_url(configured_url)
+            self.db_url, self.url_notes = normalize_database_url(configured_url)
             self.backend = "postgresql"
             if not psycopg2:
                 raise StoreConfigurationError(
-                    "DATABASE_URL is configured but psycopg2-binary is not installed."
+                    "DATABASE_URL is configured but psycopg2-binary is not installed. "
+                    "Install it with: pip install -r api/requirements.txt"
                 )
             return
 
@@ -368,17 +487,64 @@ class Store:
         return self._unavailable_reason
 
     @property
+    def retryable(self) -> bool:
+        """True when the store failed for a reason a later attempt can fix."""
+        return self._unavailable_reason is not None and self._unavailable_is_transient
+
+    def maybe_reconnect(self) -> bool:
+        """Re-attempt configuration after a *transient* failure.
+
+        Without this, a cold start that raced a database blip (DNS not warm yet,
+        Supabase project resuming from pause, a failover) disables the store for
+        the whole lifetime of the process — the deployment then reports
+        "PostgreSQL could not be reached" forever even though the database came
+        back seconds later. Configuration errors are never retried: they cannot
+        fix themselves, and re-parsing a bad URL on every request would be pure
+        overhead. Attempts are rate-limited so a dead database is not hammered.
+        """
+        if not self.retryable:
+            return False
+        if time.monotonic() - self._last_attempt < DB_RETRY_SECONDS:
+            return False
+        with self._reconnect_lock:
+            if not self.retryable or time.monotonic() - self._last_attempt < DB_RETRY_SECONDS:
+                return False
+            self._last_attempt = time.monotonic()
+            self.backend = "postgresql" if self.db_url else "sqlite"
+            # ``_connect`` no-ops while the store is marked unavailable, and
+            # ``_init`` goes through it — so the flag has to be cleared *before*
+            # bootstrapping the schema, or the store would come back "healthy"
+            # with no tables behind it. Restored below if the attempt fails.
+            self._unavailable_reason = None
+            try:
+                self._configure(self._configured_path)
+                self._init()
+            except StoreError as exc:
+                self._unavailable_reason = str(exc)
+                self._unavailable_is_transient = isinstance(exc, StoreConnectionError)
+                if self.backend != "postgresql":
+                    self.backend = "unavailable"
+                return False
+            self._unavailable_is_transient = False
+            return True
+
+    @property
     def durable(self) -> bool:
         """Only Postgres survives a redeploy; SQLite on serverless does not."""
         return self.backend == "postgresql"
 
     @property
     def note(self) -> Optional[str]:
-        notes = []
+        notes = list(self.url_notes)
         if self.ignore_database_url:
             notes.append("DATABASE_URL is ignored because APIX_IGNORE_DATABASE_URL=1.")
         if not self.available:
             notes.append(f"Collection store unavailable — {self._unavailable_reason}")
+            if self.retryable:
+                notes.append(
+                    f"Retrying every {DB_RETRY_SECONDS:g}s; a redeploy or a later request "
+                    "will pick the database up as soon as it answers."
+                )
         elif self.ephemeral:
             notes.append(EPHEMERAL_STORE_NOTE)
         elif self.ignore_database_url:
@@ -398,7 +564,8 @@ class Store:
                 )
             except Exception as exc:  # never echo the DSN (it carries credentials)
                 raise StoreConnectionError(
-                    f"PostgreSQL is configured but could not be reached: {type(exc).__name__}"
+                    "PostgreSQL is configured but could not be reached: "
+                    f"{type(exc).__name__}: {redact_credentials(exc, self.db_url)}"
                 ) from exc
             with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
                 class PseudoConn:
@@ -804,4 +971,8 @@ def get_store() -> Store:
     with _store_lock:
         if _store is None:
             _store = Store()
+        else:
+            # A store that failed for a transient reason gets another chance
+            # (rate-limited inside) instead of staying dead for the process.
+            _store.maybe_reconnect()
         return _store

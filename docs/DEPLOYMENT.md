@@ -141,6 +141,37 @@ reports `store.ignores_database_url` and a safe explanatory note (never the
 connection string). Existing PostgreSQL data is left untouched; switching
 backends does not migrate collection history.
 
+### "I set `DATABASE_URL` and it still is not working"
+
+Start with the one endpoint that says the truth — it never returns the
+connection string, only what the backend decided and why:
+
+```bash
+curl https://<your-app>/api/data/database
+```
+
+`backend`, `available`, `reason` and `note` identify every case below. The known
+ones, in the order they are worth checking:
+
+| What you see | Cause | Fix |
+| --- | --- | --- |
+| `backend: "sqlite"`, `ephemeral: true` | `DATABASE_URL` is not set *in the environment the function runs in*. On Vercel an env var added after a deployment only applies to the **next** deployment. | Set it under Project → Settings → Environment Variables for Production (and Preview), then redeploy. |
+| `note: "DATABASE_URL is ignored…"` | `APIX_IGNORE_DATABASE_URL=1` is set. | Remove it (or set `0`) and redeploy. |
+| `reason: …unreadable port…` / `…truncated…` | The password contains `@`, `:`, `/`, `#` pasted raw, which ends the URL early. | Percent-encode the password (`@`→`%40`, `:`→`%3A`, `/`→`%2F`). Copy the provider's *URI* string and change only the password. |
+| `note: "Ignored unsupported DATABASE_URL parameter(s): pgbouncer"` | Supabase's pooler URL ends with `?pgbouncer=true&connect_timeout=15`. `libpq` rejects parameters it does not know, so this used to disable the store outright; the hint is now dropped and reported. | Nothing to do — but the session/direct (port 5432) URL is preferable for a serverless backend. |
+| `reason: …could not be reached…` | Host/port unreachable, project paused, or the password is wrong. The message now carries the driver's own detail (credentials redacted). Transient failures are retried every `APIX_DB_RETRY_SECONDS` (default 15) instead of disabling the store for the process lifetime. | Check the host resolves from the platform, the project is active, and `sslmode=require` is accepted. |
+| `available: true` but the dashboard is empty in live mode | The rows are in the database but excluded from the index — see `counts.by_status`. Rows flagged `DUPLICATE`/`INVALID` never enter an index. | Check the import report; re-upload a corrected file (an upload of data that already exists is now stored as the canonical rows, not as duplicate-flagged twins). |
+| Inserts fail with `new row violates row-level security policy`, or reads return 0 rows | RLS is on and the policy does not name the role the backend logs in as. Supabase connection strings use `postgres.<project-ref>`, not `postgres`. | Re-run `db/supabase_schema.sql`; it creates one policy per backend role (`postgres` and any `postgres.*`), leaving `anon`/`authenticated` blocked. |
+
+Two details that make failures easy to misread:
+
+- `POST /api/data/upload` returns **200 even when persistence fails** — the file
+  is safely on disk and still serves the dashboard. Read `persistence.error` in
+  the response (the Import screen shows it) rather than the status code.
+- `psycopg2-binary` must be installed in the deployment (`api/requirements.txt`
+  and `backend/requirements.txt` both pin it). Without it a valid
+  `DATABASE_URL` is refused with an explicit configuration error.
+
 ### Sweeps on a request-scoped runtime
 
 A background `asyncio` loop does not survive between invocations on Vercel — the

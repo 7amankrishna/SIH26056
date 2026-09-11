@@ -158,9 +158,16 @@ COMMENT ON TABLE public.apix_state IS 'Key/value app state. "data_mode" = demo |
 -- ----------------------------------------------------------------------------
 -- Supabase exposes every table in the public schema through its auto-generated
 -- REST API. With RLS enabled and no policy for the anonymous keys, nobody can
--- read or write these tables with the anon/service key from a browser — the only
--- way in is the backend's own PostgreSQL login (the `postgres` role, which owns
--- these tables). The explicit policies below make that intent unambiguous.
+-- read or write these tables with the anon/service key from a browser.
+--
+-- The policy must name the role the BACKEND logs in as, and that is not always
+-- literally `postgres`: today's Supabase connection strings use the per-project
+-- role `postgres.<project-ref>`. A policy scoped to `postgres` alone leaves
+-- that role with RLS and no policy, which fails in the worst possible way —
+-- INSERTs raise "new row violates row-level security policy" and SELECTs
+-- silently return zero rows, i.e. "the database is connected but empty".
+-- So: one policy per candidate backend role, discovered at run time. Anonymous
+-- roles still get nothing, which is the point of keeping RLS on.
 -- ---------------------------------------------------------------------------
 ALTER TABLE public.collection_runs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.raw_payloads    ENABLE ROW LEVEL SECURITY;
@@ -168,22 +175,34 @@ ALTER TABLE public.observations    ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.apix_state      ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.schema_meta     ENABLE ROW LEVEL SECURITY;
 
-DROP POLICY IF EXISTS "apix backend full access" ON public.collection_runs;
-DROP POLICY IF EXISTS "apix backend full access" ON public.raw_payloads;
-DROP POLICY IF EXISTS "apix backend full access" ON public.observations;
-DROP POLICY IF EXISTS "apix backend full access" ON public.apix_state;
-DROP POLICY IF EXISTS "apix backend full access" ON public.schema_meta;
+-- One policy per candidate backend login role: `postgres` (the classic
+-- Supabase role) and `postgres.<project-ref>` (what current connection strings
+-- use). Re-running this file is safe — each policy is dropped before it is
+-- re-created. Roles that are not a backend login (`anon`, `authenticated`)
+-- get no policy at all, so the browser-facing REST keys still see nothing.
+DO $$
+DECLARE
+  t text;
+  r text;
+  policy_name text;
+BEGIN
+  FOREACH t IN ARRAY ARRAY['collection_runs','raw_payloads','observations','apix_state','schema_meta']
+  LOOP
+    -- Policy name used by earlier versions of this file.
+    EXECUTE format('DROP POLICY IF EXISTS "apix backend full access" ON public.%I', t);
 
-CREATE POLICY "apix backend full access" ON public.collection_runs
-    FOR ALL TO postgres USING (true) WITH CHECK (true);
-CREATE POLICY "apix backend full access" ON public.raw_payloads
-    FOR ALL TO postgres USING (true) WITH CHECK (true);
-CREATE POLICY "apix backend full access" ON public.observations
-    FOR ALL TO postgres USING (true) WITH CHECK (true);
-CREATE POLICY "apix backend full access" ON public.apix_state
-    FOR ALL TO postgres USING (true) WITH CHECK (true);
-CREATE POLICY "apix backend full access" ON public.schema_meta
-    FOR ALL TO postgres USING (true) WITH CHECK (true);
+    FOR r IN SELECT rolname FROM pg_roles
+             WHERE rolname = 'postgres' OR rolname LIKE 'postgres.%'
+    LOOP
+      policy_name := 'apix backend access: ' || r;
+      EXECUTE format('DROP POLICY IF EXISTS %I ON public.%I', policy_name, t);
+      EXECUTE format(
+        'CREATE POLICY %I ON public.%I FOR ALL TO %I USING (true) WITH CHECK (true)',
+        policy_name, t, r
+      );
+    END LOOP;
+  END LOOP;
+END $$;
 
 -- ---------------------------------------------------------------------------
 -- 7. Verify — run this after a sweep and you should see numbers, not zeros

@@ -8,7 +8,7 @@ lead-time, distribution, quality, collection, methodology and provenance.
 from __future__ import annotations
 
 import logging
-from typing import Optional
+from typing import Any, Collection, Optional
 
 from fastapi import APIRouter, File, HTTPException, Query, UploadFile
 
@@ -160,6 +160,53 @@ def reload_data_files() -> dict:
     return import_report()
 
 
+def _canonical_observations(dataset: Any) -> list[Any]:
+    """One row per ``observation_id`` — the loader's duplicate twins dropped.
+
+    The loader emits every copy it found and flags the later ones
+    ``DUPLICATE`` / ``flag:duplicate_fingerprint``, so the *first* row for an id
+    is the one carrying the real quality verdict. Rows without an id cannot be
+    de-duplicated and are passed through untouched.
+    """
+    canonical: dict[str, Any] = {}
+    unkeyed: list[Any] = []
+    for obs in dataset.observations:
+        if not obs.observation_id:
+            unkeyed.append(obs)
+        elif obs.observation_id not in canonical:
+            canonical[obs.observation_id] = obs
+    return list(canonical.values()) + unkeyed
+
+
+def _rows_to_persist(dataset: Any, disk_names: Optional[Collection[str]] = None) -> list[Any]:
+    """The rows to write to the database for the files named ``disk_names``.
+
+    Selecting only the rows whose ``raw_payload_reference`` names the newly
+    written file is wrong whenever that data already exists under another name
+    (a re-upload, which lands as ``fares_1.csv``, or a file already sitting in
+    the data directory). The loader flags the *second* copy ``DUPLICATE``, so
+    persisting "the new file's rows" writes exactly the rows the index excludes
+    and the database ends up holding data that produces an empty dashboard.
+    Resolve to the canonical row per ``observation_id`` instead.
+
+    ``disk_names=None`` means "everything the loader read".
+    """
+    canonical = _canonical_observations(dataset)
+    if disk_names is None:
+        return canonical
+    names = set(disk_names)
+    touched = {
+        o.observation_id
+        for o in dataset.observations
+        if o.observation_id and any(n in (o.raw_payload_reference or "") for n in names)
+    }
+    return [
+        o for o in canonical
+        if o.observation_id in touched
+        or (not o.observation_id and any(n in (o.raw_payload_reference or "") for n in names))
+    ]
+
+
 def _merge_persistence(reports: list[dict]) -> Optional[dict]:
     """Combine per-file persistence reports into one summary."""
     if not reports:
@@ -206,12 +253,9 @@ def persist_data_files(file: Optional[str] = Query(
     ds = get_custom_dataset()
     if ds is None or not ds.observations:
         raise HTTPException(status_code=404, detail="No imported data to persist — upload a file first.")
-    observations = ds.observations
-    if file:
-        selected = [o for o in observations if file in (o.raw_payload_reference or "")]
-        if not selected:
-            raise HTTPException(status_code=404, detail=f"No rows came from '{file}'.")
-        observations = selected
+    observations = _rows_to_persist(ds, [file] if file else None)
+    if file and not observations:
+        raise HTTPException(status_code=404, detail=f"No rows came from '{file}'.")
     basket = set(ds.route_meta) or None
     report = persist_observations(observations, label=file or "all", basket=basket)
     if not report.get("persisted"):
@@ -341,10 +385,7 @@ async def upload_data_files(files: list[UploadFile] = File(...)) -> dict:
 
         ds = get_custom_dataset()
         names = {item["name"] for item in imported}
-        fresh = [
-            o for o in (ds.observations if ds else [])
-            if any(name in (o.raw_payload_reference or "") for name in names)
-        ]
+        fresh = _rows_to_persist(ds, names)
         if fresh:
             # Group by the name the user uploaded under: re-uploading "fares.csv"
             # (which lands as fares_1.csv) must replace what it wrote last time.
@@ -353,8 +394,7 @@ async def upload_data_files(files: list[UploadFile] = File(...)) -> dict:
                 by_label.setdefault(item["original_name"], []).append(item["name"])
             reports = []
             for label, disk_names in by_label.items():
-                rows = [o for o in fresh
-                        if any(n in (o.raw_payload_reference or "") for n in disk_names)]
+                rows = _rows_to_persist(ds, disk_names)
                 if rows:
                     reports.append(persist_observations(
                         rows, label=label, basket=set(ds.route_meta) if ds else None,
