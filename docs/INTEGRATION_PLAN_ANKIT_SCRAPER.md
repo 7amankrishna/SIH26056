@@ -187,7 +187,7 @@ Field mapping (anki → APIx canonical payload):
 Config (`config.py` additions):
 
 ```
-APIX_COLLECTOR_SOURCES=fixture,ota_cleartrip,ota_easemytrip
+APIX_COLLECTOR_SOURCES=ota_cleartrip,ota_easemytrip
 APIX_OTA_ENABLED=0|1                      # master gate (default 0)
 APIX_PLAYWRIGHT_HEADLESS=1
 APIX_PLAYWRIGHT_TIMEOUT_MS=60000
@@ -277,7 +277,7 @@ raw payload visible in the audit view → toggle back to demo.
 python -m playwright install chromium
 
 # 2. enable the OTA adapters
-export APIX_COLLECTOR_SOURCES=fixture,ota_cleartrip,ota_easemytrip
+export APIX_COLLECTOR_SOURCES=ota_cleartrip,ota_easemytrip
 export APIX_OTA_ENABLED=1
 export APIX_DATA_MODE=live
 export APIX_SWEEP_LEAD_TIMES=1,7,30

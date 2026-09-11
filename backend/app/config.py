@@ -144,6 +144,8 @@ class Settings:
     #   amadeus  - permissioned Amadeus for Developers self-service API
     #   http_json / http_html - generic policy-respecting fetchers for
     #                            sources that explicitly permit automation
+    #   ota_cleartrip / ota_easemytrip - Playwright browser scrapers for the
+    #                            Cleartrip / EaseMyTrip OTA portals (live fares)
     collector_sources: list[str] = _env_list("APIX_COLLECTOR_SOURCES", "fixture")
 
     # Per-source politeness (see docs/SCRAPING_POLICY.md).
