@@ -245,3 +245,106 @@ def test_retry_is_rate_limited(monkeypatch):
     assert store.retryable is True
     # Second call inside the window must not open another connection attempt.
     assert store.maybe_reconnect() is False
+
+
+# --------------------------------------------------------------------------- #
+# 4. IPv6-only DNS + a runtime with no outbound IPv6 (serverless)
+# --------------------------------------------------------------------------- #
+
+DIRECT_HOST = "db.abcdefghijkl.supabase.co"
+DIRECT_URL = f"postgresql://postgres:unused@{DIRECT_HOST}:5432/postgres"
+
+
+@pytest.fixture()
+def no_ipv4_dns(monkeypatch):
+    """Host answers AAAA only, and the process cannot open an IPv6 socket."""
+    import socket as socket_module
+
+    real_getaddrinfo = socket_module.getaddrinfo
+
+    def fake_getaddrinfo(host, port, family=0, *args, **kwargs):
+        if host == DIRECT_HOST and family in (socket_module.AF_INET, 0, socket_module.AF_UNSPEC):
+            if family == socket_module.AF_INET:
+                raise socket_module.gaierror(-5, "No address associated with hostname")
+            return [(socket_module.AF_INET6, socket_module.SOCK_STREAM, 6, "", ("2406:da1a::1", 5432, 0, 0))]
+        return real_getaddrinfo(host, port, family, *args, **kwargs)
+
+    monkeypatch.setattr(store_module.socket, "getaddrinfo", fake_getaddrinfo)
+    monkeypatch.setattr(store_module, "has_ipv6_egress", lambda: False)
+
+
+def test_ipv6_only_host_reports_the_endpoint_to_use_instead(monkeypatch, no_ipv4_dns):
+    """The fix for 'Cannot assign requested address' is a different host, not a retry."""
+    def refuse(*args, **kwargs):
+        raise RuntimeError(
+            'connection to server at "db.abcdefghijkl.supabase.co" (2406:da1a::1), '
+            "port 5432 failed: Cannot assign requested address"
+        )
+
+    monkeypatch.setattr(store_module.psycopg2, "connect", refuse)
+    monkeypatch.setenv("DATABASE_URL", DIRECT_URL)
+
+    store = Store()
+    reason = store.unavailable_reason
+    assert store.available is False
+    assert "Cannot assign requested address" in reason          # the driver's own words
+    assert "no IPv4 address" in reason
+    assert "aws-0-<region>.pooler.supabase.com" in reason        # what to use instead
+    assert "postgres.abcdefghijkl" in reason                     # pooler user, derived
+    assert "unused" not in reason                                # credential never echoed
+
+
+def test_dual_stack_host_is_repinned_to_ipv4(monkeypatch):
+    """A host that *does* publish an A record should connect over IPv4, not fail."""
+    monkeypatch.setattr(store_module, "_ipv4_address", lambda host, port: "203.0.113.7")
+
+    attempts = []
+
+    class _Conn:
+        def close(self):
+            return None
+
+    def fake_connect(url, **kwargs):
+        attempts.append(url)
+        if "hostaddr=203.0.113.7" not in url:
+            raise RuntimeError("port 5432 failed: Cannot assign requested address")
+        return _Conn()
+
+    monkeypatch.setattr(store_module.psycopg2, "connect", fake_connect)
+    monkeypatch.setenv("DATABASE_URL", "postgresql://u:p@db.example.com:5432/postgres")
+
+    store = Store.__new__(Store)          # exercise _pg_connect in isolation
+    store.db_url = "postgresql://u:p@db.example.com:5432/postgres"
+    store._effective_url = None
+    store.address_fallback = None
+    store.url_notes = []
+    store.ephemeral = False
+    store.ignore_database_url = False
+    store._unavailable_reason = None
+    store._unavailable_is_transient = False
+
+    assert isinstance(store._pg_connect(), _Conn)
+    assert len(attempts) == 2
+    assert "hostaddr=203.0.113.7" in attempts[1]
+    assert attempts[1].startswith("postgresql://u:p@db.example.com:5432/postgres?")
+    assert store.address_fallback == "ipv4"
+    # Remembered: the next connection does not repeat the failing attempt.
+    store._pg_connect()
+    assert len(attempts) == 3
+    assert "hostaddr=203.0.113.7" in attempts[2]
+    assert "IPv4" in (store.note or "") and "hostaddr pinned" in (store.note or "")
+
+
+def test_pinned_url_keeps_the_hostname_for_tls_and_still_connects():
+    """`host` stays the DNS name (certificate match); `hostaddr` only picks the address."""
+    pinned = store_module.pin_database_url_to_ipv4(
+        "postgresql://u:p@localhost:5432/postgres?sslmode=require"
+    )
+    assert pinned is not None
+    assert "@localhost:5432/postgres" in pinned          # hostname preserved
+    assert "sslmode=require" in pinned                   # existing params kept
+    assert "hostaddr=127.0.0.1" in pinned
+
+    # An already-pinned URL is never stacked with a second pin.
+    assert store_module.pin_database_url_to_ipv4(pinned) is None
+

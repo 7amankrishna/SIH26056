@@ -210,6 +210,29 @@ def test_date_window_queries_translate_to_postgres(pg_store):
     assert pg_store.sources_seen() == ["capture"]
 
 
+def test_ipv4_pinned_connection_round_trips(pg_store):
+    """The ``hostaddr``-pinned URL produced by the IPv4 fallback must really work.
+
+    A dual-stack database host plus a runtime without outbound IPv6 is dialed
+    through this URL instead of the plain one, so it has to carry the hostname
+    (for TLS) and still execute ordinary reads and writes.
+    """
+    pinned = store_module.pin_database_url_to_ipv4(DATABASE_URL)
+    if pinned is None:
+        pytest.skip("scratch database host publishes no IPv4 address to pin")
+    assert "hostaddr=" in pinned
+
+    pg_store._effective_url = pinned
+    pg_store.set_state("data_mode", "live")
+    assert pg_store.get_state("data_mode") == "live"
+
+    pg_store.begin_run("run-pinned", "capture", "manual")
+    assert pg_store.insert_observations("run-pinned", [_observation("obs-pinned")]) == 1
+    counts = pg_store.counts()
+    assert counts["observations"] == 1
+    assert counts["valid_observations"] == 1
+
+
 def test_reset_clears_every_table(pg_store):
     pg_store.set_state("data_mode", "live")
     pg_store.begin_run("run-3", "capture", "manual")

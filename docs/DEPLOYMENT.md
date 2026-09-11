@@ -160,6 +160,7 @@ ones, in the order they are worth checking:
 | `reason: …unreadable port…` / `…truncated…` | The password contains `@`, `:`, `/`, `#` pasted raw, which ends the URL early. | Percent-encode the password (`@`→`%40`, `:`→`%3A`, `/`→`%2F`). Copy the provider's *URI* string and change only the password. |
 | `note: "Ignored unsupported DATABASE_URL parameter(s): pgbouncer"` | Supabase's pooler URL ends with `?pgbouncer=true&connect_timeout=15`. `libpq` rejects parameters it does not know, so this used to disable the store outright; the hint is now dropped and reported. | Nothing to do — but the session/direct (port 5432) URL is preferable for a serverless backend. |
 | `reason: …could not be reached…` | Host/port unreachable, project paused, or the password is wrong. The message now carries the driver's own detail (credentials redacted). Transient failures are retried every `APIX_DB_RETRY_SECONDS` (default 15) instead of disabling the store for the process lifetime. | Check the host resolves from the platform, the project is active, and `sslmode=require` is accepted. |
+| `reason: …Cannot assign requested address…` or `…Network is unreachable…` against an IPv6 literal such as `(2406:da1a:…)` | The host resolved to **IPv6 only** and the runtime has no outbound IPv6 — Vercel functions have none. Supabase's *direct* host `db.<ref>.supabase.co` is IPv6-only on current projects, so this URL can never connect there. | Use the pooler, which publishes IPv4: `postgresql://postgres.<ref>:PASSWORD@aws-0-<region>.pooler.supabase.com:5432/postgres` (session) or port `6543` (transaction). The user becomes `postgres.<ref>`, so **re-run `db/supabase_schema.sql`** — its RLS policies are created per login role. The store's message names the exact user and host for your project. |
 | `available: true` but the dashboard is empty in live mode | The rows are in the database but excluded from the index — see `counts.by_status`. Rows flagged `DUPLICATE`/`INVALID` never enter an index. | Check the import report; re-upload a corrected file (an upload of data that already exists is now stored as the canonical rows, not as duplicate-flagged twins). |
 | Inserts fail with `new row violates row-level security policy`, or reads return 0 rows | RLS is on and the policy does not name the role the backend logs in as. Supabase connection strings use `postgres.<project-ref>`, not `postgres`. | Re-run `db/supabase_schema.sql`; it creates one policy per backend role (`postgres` and any `postgres.*`), leaving `anon`/`authenticated` blocked. |
 
@@ -171,6 +172,12 @@ Two details that make failures easy to misread:
 - `psycopg2-binary` must be installed in the deployment (`api/requirements.txt`
   and `backend/requirements.txt` both pin it). Without it a valid
   `DATABASE_URL` is refused with an explicit configuration error.
+- **Dual-stack hosts recover by themselves.** If the host publishes both an A and
+  an AAAA record and the IPv6 attempt fails, the store re-dials the IPv4 address
+  directly (`hostaddr`, hostname kept for TLS verification) and says so in
+  `note`: *"Connected to PostgreSQL over IPv4 (hostaddr pinned)…"*. Only an
+  IPv6-only host needs the endpoint change above — no client-side setting can
+  invent an IPv4 address.
 
 ### Sweeps on a request-scoped runtime
 
