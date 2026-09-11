@@ -175,6 +175,13 @@ class Settings:
     amadeus_client_secret: str = _env("AMADEUS_CLIENT_SECRET", "")
     amadeus_base_url: str = _env("AMADEUS_BASE_URL", "https://test.api.amadeus.com")
 
+    # OTA browser scrapers (`ota_cleartrip` / `ota_easemytrip` adapters).
+    # Registered when listed in APIX_COLLECTOR_SOURCES; headless by default so
+    # they run in Docker/CI. The browser binary is installed separately:
+    #   python -m playwright install chromium
+    ota_headless: bool = _env_bool("APIX_OTA_HEADLESS", "1")
+    ota_timeout_ms: int = int(_env("APIX_OTA_TIMEOUT_MS", "60000"))
+
     # Max requests issued per sweep per source (hard politeness ceiling).
     max_requests_per_sweep: int = int(_env("APIX_MAX_REQUESTS_PER_SWEEP", "120"))
 

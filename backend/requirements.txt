@@ -6,6 +6,9 @@ httpx==0.28.1
 python-multipart==0.0.20   # required by POST /api/data/upload (file uploads)
 pytest==8.3.4
 psycopg2-binary==2.9.10
+# OTA browser scrapers (ota_cleartrip / ota_easemytrip adapters). The browser
+# binary is a separate install step: `python -m playwright install chromium`.
+playwright==1.62.0
 # Optional: read .xlsx/.xlsm fare exports straight from the data directory.
 # The loader degrades gracefully (with a clear message) when it is not installed.
 openpyxl==3.1.5

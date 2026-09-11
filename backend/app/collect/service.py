@@ -155,6 +155,13 @@ class CollectionService:
             # turn a credentialed client into a request to somewhere else.
             adapter.bind_transport(self._wrap(None, allowed_hosts=[adapter.base_url_host]))
             return adapter
+        if source_id in {"ota_cleartrip", "ota_easemytrip"}:
+            # Browser scrapers: playwright is imported lazily inside the adapter
+            # so the serverless path (which never registers these) stays lean.
+            from .ota.adapters import PlaywrightOtaAdapter
+
+            site = "cleartrip" if source_id == "ota_cleartrip" else "easemytrip"
+            return PlaywrightOtaAdapter(source_id=source_id, site=site)
         if source_id in {"http_json", "http_html"}:
             # Generic adapters are pure configuration (see docs/API.md): a source
             # is a URL template + a field map, never new code. Refuse to build one

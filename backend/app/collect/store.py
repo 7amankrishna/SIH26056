@@ -2,8 +2,10 @@
 
 Stdlib ``sqlite3`` for local and the Vercel fallback demo: no service to
 provision, works offline. A configured ``DATABASE_URL`` is honoured on every
-platform (including Vercel) and selects Postgres via psycopg2; set
-``APIX_IGNORE_DATABASE_URL=1`` only to force the offline SQLite fallback. Three tables:
+platform (including Vercel) and selects Postgres via psycopg2 — this is the
+Supabase path (Supabase is hosted Postgres: use the connection string from
+Supabase → Settings → Database); set ``APIX_IGNORE_DATABASE_URL=1`` only to
+force the offline SQLite fallback. Three tables:
 
     collection_runs   one row per sweep per source, incl. blocked/failed runs
     raw_payloads      the payload *exactly as received* (never rewritten)

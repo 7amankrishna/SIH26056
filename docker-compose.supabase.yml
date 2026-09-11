@@ -1,0 +1,37 @@
+# APIx with the OTA browser scrapers, persisting to Supabase (hosted Postgres).
+#
+#   cp .env.example .env      # then set DATABASE_URL to your Supabase string
+#   docker compose -f docker-compose.supabase.yml up --build
+#
+# There is no database container here — Supabase is hosted. The backend reads
+# DATABASE_URL from .env, creates the tables on first boot (or run
+# db/supabase_schema.sql once in the Supabase SQL Editor), and the OTA scrapers
+# (Cleartrip / EaseMyTrip) write observations, raw payloads and run logs there.
+# The dashboard's Demo <-> Scraper toggle then serves live data from Supabase.
+
+services:
+  backend:
+    build:
+      context: ./backend
+      args:
+        ENABLE_OTA: "1"
+    container_name: apix-backend
+    env_file:
+      - .env
+    environment:
+      - APIX_DEMO_MODE=0
+      - APIX_COLLECTOR_ENABLED=1
+      - APIX_COLLECTOR_SOURCES=ota_cleartrip,ota_easemytrip
+      - APIX_SWEEP_LEAD_TIMES=1,7,30
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+
+  frontend:
+    build: ./frontend
+    container_name: apix-frontend
+    depends_on:
+      - backend
+    ports:
+      - "8080:80"
+    restart: unless-stopped
