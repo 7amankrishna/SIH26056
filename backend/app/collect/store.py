@@ -18,6 +18,7 @@ from __future__ import annotations
 import os
 import datetime as dt
 import json
+import socket
 import sqlite3
 import threading
 import time
@@ -127,6 +128,130 @@ def redact_credentials(text: str, database_url: Optional[str]) -> str:
         if password:
             message = message.replace(password, "***")
     return message[:300] or type(text).__name__
+
+
+# --------------------------------------------------------------------------- #
+# Address-family diagnostics
+# ----------------------------------------------------------------------------
+# "Cannot assign requested address" / "Network is unreachable" from libpq is not
+# a database problem: the host resolved to an IPv6 address and the runtime has
+# no outbound IPv6 (Vercel functions, most containers). Supabase's *direct*
+# host ``db.<ref>.supabase.co`` is IPv6-only on current projects, so a URL that
+# looks perfectly correct can never connect there — while the pooler endpoint
+# publishes IPv4. Detect that, retry over IPv4 when the host has an A record,
+# and otherwise say exactly which endpoint to use instead.
+# --------------------------------------------------------------------------- #
+
+#: libpq's wordings for "this address family cannot be used from here".
+_ADDRESS_FAMILY_HINTS = (
+    "cannot assign requested address",
+    "network is unreachable",
+    "no route to host",
+    "address family not supported by protocol",
+)
+
+
+def _host_and_port(database_url: str) -> tuple[Optional[str], int]:
+    try:
+        parsed = urlsplit(database_url)
+    except ValueError:
+        return None, 5432
+    try:
+        port = parsed.port or 5432
+    except ValueError:
+        port = 5432
+    return (parsed.hostname or None), port
+
+
+def _ipv4_address(host: str, port: int) -> Optional[str]:
+    """First A record for ``host``, or None when it has no IPv4 address."""
+    try:
+        for info in socket.getaddrinfo(host, port, socket.AF_INET, socket.SOCK_STREAM):
+            return info[4][0]
+    except OSError:
+        return None
+    return None
+
+
+def has_ipv6_egress() -> bool:
+    """Can this process open an IPv6 socket at all? (UDP connect sends nothing.)"""
+    try:
+        probe = socket.socket(socket.AF_INET6, socket.SOCK_DGRAM)
+    except OSError:
+        return False
+    try:
+        probe.connect(("2001:4860:4860::8888", 53))
+        return True
+    except OSError:
+        return False
+    finally:
+        probe.close()
+
+
+def _supabase_project_ref(host: str) -> Optional[str]:
+    """``db.<ref>.supabase.co`` -> ``<ref>`` (the direct, IPv6-only endpoint)."""
+    if host.endswith(".supabase.co") and host.startswith("db."):
+        ref = host[3 : -len(".supabase.co")]
+        return ref or None
+    return None
+
+
+def pin_database_url_to_ipv4(database_url: str) -> Optional[str]:
+    """Rewrite a URL to dial the host's IPv4 address via ``hostaddr``.
+
+    ``host`` stays the hostname so TLS certificate verification still matches;
+    ``hostaddr`` only tells libpq which address to connect to. Returns None when
+    the host has no A record — there is then nothing to pin and the operator has
+    to use a different endpoint.
+    """
+    host, port = _host_and_port(database_url)
+    if not host:
+        return None
+    ipv4 = _ipv4_address(host, port)
+    if not ipv4:
+        return None
+    if "hostaddr=" in database_url:
+        return None  # already pinned; do not stack pins
+    parsed = urlsplit(database_url)
+    query = f"{parsed.query}&hostaddr={ipv4}" if parsed.query else f"hostaddr={ipv4}"
+    return urlunsplit(parsed._replace(query=query))
+
+
+def describe_address_failure(database_url: str, exc: Exception) -> Optional[str]:
+    """Explain an address-family failure in terms the operator can act on.
+
+    Returns None when the error is not about address families — the caller then
+    reports the driver's own message unchanged.
+    """
+    text = str(exc).lower()
+    if not any(hint in text for hint in _ADDRESS_FAMILY_HINTS):
+        return None
+    host, port = _host_and_port(database_url)
+    if not host:
+        return None
+    if _ipv4_address(host, port):
+        return None  # dual-stack host: the IPv4 retry handles it
+    detail = (
+        f"host '{host}' has no IPv4 address (IPv6-only DNS) and this runtime cannot "
+        "reach it over IPv6"
+    )
+    if not has_ipv6_egress():
+        detail += " — this process cannot open an outbound IPv6 socket at all"
+    detail += ". "
+    project = _supabase_project_ref(host)
+    if project:
+        detail += (
+            f"Use Supabase's IPv4 pooler endpoint instead: user 'postgres.{project}', "
+            "host 'aws-0-<region>.pooler.supabase.com' (the region is shown in Supabase "
+            "→ Project Settings → Database → Connection string), port 5432 for session "
+            "mode or 6543 for transaction mode, same password and database. Note the "
+            "user changes to 'postgres.<ref>', so re-run db/supabase_schema.sql — its "
+            "row-level-security policies are created per login role."
+        )
+    else:
+        detail += "Point DATABASE_URL at an endpoint that publishes an IPv4 address."
+    return detail
+
 
 
 POSTGRES_STORE_HINT = (
@@ -421,6 +546,8 @@ class Store:
         self.ephemeral = False
         self.ignore_database_url = _ignore_database_url()
         self.db_url: Optional[str] = None
+        #: The URL actually dialled, when it differs from ``db_url`` (IPv4 pin).
+        self._effective_url: Optional[str] = None
         self.path: Optional[Path] = None
         self.backend = "sqlite"
         try:
@@ -536,6 +663,11 @@ class Store:
     @property
     def note(self) -> Optional[str]:
         notes = list(self.url_notes)
+        if self.address_fallback == "ipv4":
+            notes.append(
+                "Connected to PostgreSQL over IPv4 (hostaddr pinned) because the "
+                "host's IPv6 address is not reachable from this runtime."
+            )
         if self.ignore_database_url:
             notes.append("DATABASE_URL is ignored because APIX_IGNORE_DATABASE_URL=1.")
         if not self.available:
@@ -551,22 +683,54 @@ class Store:
             notes.append(f"Using SQLite. {POSTGRES_STORE_HINT}")
         return " ".join(notes) or None
 
+    #: Set when a connection succeeded by pinning ``hostaddr`` to an IPv4
+    #: address after the default attempt hit an unusable IPv6 route.
+    address_fallback: Optional[str] = None
+
+    def _pg_connect(self):
+        """Open a PostgreSQL connection, recovering from an IPv6-only DNS answer.
+
+        Serverless runtimes generally have no outbound IPv6. When the host also
+        publishes an A record, dialling that address directly turns an otherwise
+        fatal "Cannot assign requested address" into a working connection; when
+        it does not, no client-side trick can help, so the failure is reported in
+        terms the operator can act on (which endpoint to use instead).
+        """
+        timeout = int(os.getenv("APIX_DB_CONNECT_TIMEOUT_SECONDS", "5"))
+        url = self._effective_url or self.db_url
+        try:
+            return psycopg2.connect(url, connect_timeout=timeout)
+        except Exception as exc:  # never echo the DSN (it carries credentials)
+            pinned = pin_database_url_to_ipv4(self.db_url)
+            if pinned and pinned != self._effective_url:
+                try:
+                    conn = psycopg2.connect(pinned, connect_timeout=timeout)
+                except Exception as retry_exc:
+                    hint = describe_address_failure(self.db_url, retry_exc)
+                    raise StoreConnectionError(
+                        "PostgreSQL is configured but could not be reached: "
+                        f"{type(retry_exc).__name__}: "
+                        f"{redact_credentials(retry_exc, self.db_url)}"
+                        + (f" — {hint}" if hint else "")
+                    ) from retry_exc
+                # Remember it: every store operation opens a fresh connection.
+                self._effective_url = pinned
+                self.address_fallback = "ipv4"
+                return conn
+            hint = describe_address_failure(self.db_url, exc)
+            raise StoreConnectionError(
+                "PostgreSQL is configured but could not be reached: "
+                f"{type(exc).__name__}: {redact_credentials(exc, self.db_url)}"
+                + (f" — {hint}" if hint else "")
+            ) from exc
+
     @contextmanager
     def _connect(self):
         if not self.available:
             yield _NullConnection()
             return
         if self.db_url:
-            try:
-                conn = psycopg2.connect(
-                    self.db_url,
-                    connect_timeout=int(os.getenv("APIX_DB_CONNECT_TIMEOUT_SECONDS", "5")),
-                )
-            except Exception as exc:  # never echo the DSN (it carries credentials)
-                raise StoreConnectionError(
-                    "PostgreSQL is configured but could not be reached: "
-                    f"{type(exc).__name__}: {redact_credentials(exc, self.db_url)}"
-                ) from exc
+            conn = self._pg_connect()
             with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
                 class PseudoConn:
                     def execute(self, q, args=()):
