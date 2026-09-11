@@ -55,6 +55,11 @@ class PlaywrightOtaAdapter(SourceAdapter):
     type = "browser"
     compliance = "ota_unchecked"
     requires_robots_gate = False
+    # Browser scraping cannot finish inside a short-lived serverless request:
+    # it needs Chromium and a real process (Docker/VM or the standalone CLI).
+    # Request-scoped runtimes refuse these sources fast instead of 504-ing.
+    request_safe = False
+    cost_per_query_seconds = 20.0
 
     def __init__(
         self,

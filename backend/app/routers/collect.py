@@ -83,19 +83,40 @@ async def set_data_source(body: ModeBody) -> dict:
     # the toggle produces an immediately meaningful screen instead of a spinner.
     # Where no background loop survives (serverless), the sweep has to be awaited
     # *here* — a fire-and-forget task is killed the moment the response returns.
+    # Browser scrapers (Cleartrip/EaseMyTrip) are the exception: they cannot run
+    # inside a request at all, so refuse them *fast* with an actionable note
+    # instead of timing out mid-sweep and surfacing a 504.
     if body.mode.lower() == LIVE and not collection_service.has_live_data and collection_service.adapters:
         if collection_service.background_running:
             collection_service.start_sweep(trigger="mode-switch")
             result["note"] = "Live mode selected — a first sweep is running; the screens fill as it lands."
         else:
-            sweep = await collection_service.run_sweep(trigger="mode-switch")
-            result["note"] = (
-                f"Live mode selected — first sweep collected {sweep.observations} observations "
-                f"({sweep.valid} index-eligible) in {sweep.duration_ms} ms."
-                + (f" {sweep.note}" if sweep.note else "")
-            )
-            if sweep.error:
-                result["note"] = f"Live mode selected but the first sweep failed: {sweep.error}"
+            unsafe = collection_service.request_unsafe_sources()
+            safe = [sid for sid in collection_service.adapters if sid not in unsafe]
+            if not safe:
+                result["note"] = (
+                    "Live mode selected, but the enabled sources ("
+                    + ", ".join(unsafe)
+                    + ") are browser scrapers: they need Chromium and a long-lived process, "
+                    "so they cannot run inside a single serverless request (that is what the 504 was). "
+                    "Run them with a background worker — `docker compose -f docker-compose.supabase.yml up` "
+                    "or `python -m app.collect.ota.cli` — and the collected fares will appear here from Supabase."
+                )
+            else:
+                sweep = await collection_service.run_sweep(source_ids=safe, trigger="mode-switch")
+                note = (
+                    f"Live mode selected — first sweep collected {sweep.observations} observations "
+                    f"({sweep.valid} index-eligible) in {sweep.duration_ms} ms."
+                    + (f" {sweep.note}" if sweep.note else "")
+                )
+                if sweep.error:
+                    note = f"Live mode selected but the first sweep failed: {sweep.error}"
+                if unsafe:
+                    note += (
+                        f" Note: browser sources ({', '.join(unsafe)}) were skipped — they need a "
+                        "background worker (Docker/CLI), not an in-request sweep."
+                    )
+                result["note"] = note
     ds = get_dataset()
     state = collection_service.status()
     return {
@@ -184,6 +205,22 @@ async def run_sweep(body: Optional[SweepBody] = None) -> dict:
     if body.lead_times:
         # Scoped to this request only — the scheduled sweep keeps its own ladder.
         settings.sweep_lead_times = [int(x) for x in body.lead_times if int(x) > 0]
+
+    # On a request-scoped runtime (no surviving background loop), browser
+    # scrapers cannot finish inside the request — refuse them fast instead of
+    # letting the platform's gateway time the request out mid-sweep (504).
+    if not collection_service.background_running:
+        unsafe = collection_service.request_unsafe_sources(body.sources)
+        if unsafe:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"Source(s) {', '.join(unsafe)} are browser scrapers and cannot run inside a "
+                    "serverless request (no Chromium, no long-lived process). Run them with a "
+                    "background worker — `docker compose -f docker-compose.supabase.yml up` or "
+                    "`python -m app.collect.ota.cli` — and the dashboard will show the stored fares."
+                ),
+            )
 
     in_request = body.wait or not collection_service.background_running
     if in_request:

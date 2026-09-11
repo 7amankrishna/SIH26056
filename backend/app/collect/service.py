@@ -215,6 +215,21 @@ class CollectionService:
         self.adapters.pop(source_id, None)
         self.breakers.pop(source_id, None)
 
+    def request_unsafe_sources(self, source_ids: Optional[list[str]] = None) -> list[str]:
+        """Sources that cannot run inside a short-lived request (browser scrapers).
+
+        Request-scoped runtimes (serverless) freeze the process the moment the
+        response is returned, so a Playwright sweep would be cut off mid-flight
+        and the caller would see a gateway timeout. These sources must run under
+        a background loop (Docker/VM) or the standalone CLI instead.
+        """
+        ids = source_ids or list(self.adapters.keys())
+        return [
+            sid
+            for sid in ids
+            if sid in self.adapters and not getattr(self.adapters[sid], "request_safe", True)
+        ]
+
     # ------------------------------------------------------------------ #
     # Mode (the dashboard toggle)
     # ------------------------------------------------------------------ #
@@ -364,13 +379,21 @@ class CollectionService:
 
         ``None`` means "no cap": either a background loop owns the sweep (it can
         take its time) or the enabled sources cost no wall-clock time at all.
+        A source's ``cost_per_query_seconds`` is honoured so a browser source
+        can never be sized as if it were a plain HTTP GET.
         """
         if self.background_running:
             return None
         gap = self.effective_request_gap(source_ids)
-        if gap <= 0:
+        ids = source_ids or list(self.adapters.keys())
+        cost = max(
+            (float(getattr(self.adapters.get(sid), "cost_per_query_seconds", 0.0) or 0.0) for sid in ids),
+            default=0.0,
+        )
+        per_query = max(gap, cost)
+        if per_query <= 0:
             return None
-        return max(1, int(settings.request_sweep_budget_seconds / gap))
+        return max(1, int(settings.request_sweep_budget_seconds / per_query))
 
     def start_sweep(
         self,
