@@ -116,7 +116,7 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
 export function Layout() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const { data: overview } = useOverview();
-  const { isLive, isCustom, mode, daysCollected, counts, ready, dataFiles } = useDataSource();
+  const { isLive, isCustom, mode, daysCollected, counts, ready, dataFiles, note } = useDataSource();
   const [bannerHidden, setBannerHidden] = useState(false);
   const [dataBannerHidden, setDataBannerHidden] = useState(false);
   const location = useLocation();
@@ -281,9 +281,16 @@ export function Layout() {
               <div className="mb-4 flex items-start gap-3 rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-xs text-sky-800">
                 <Activity className="mt-0.5 h-4 w-4 shrink-0" />
                 <p>
-                  <span className="font-semibold">Live mode requested — no observations stored yet.</span> The screens below are
-                  still on demo data so nothing looks broken. Use the scraper control in the header, or check that an adapter is
-                  enabled via <span className="font-mono">APIX_COLLECTOR_SOURCES</span>.
+                  <span className="font-semibold">Live mode requested — no observations stored yet.</span>{" "}
+                  {note ? (
+                    <span>{note}</span>
+                  ) : (
+                    <span>
+                      The screens below are still on demo data so nothing looks broken. Use the scraper
+                      control in the header, or check that an adapter is enabled via{" "}
+                      <span className="font-mono">APIX_COLLECTOR_SOURCES</span>.
+                    </span>
+                  )}
                 </p>
               </div>
             )}

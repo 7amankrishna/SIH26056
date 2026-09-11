@@ -302,9 +302,26 @@ cp .env.example .env   # set DATABASE_URL to your Supabase connection string
 docker compose -f docker-compose.supabase.yml up --build
 ```
 
+**Browser scrapers need a long-lived process — they cannot run on Vercel.**
+Cleartrip/EaseMyTrip are Playwright scrapers: each route takes tens of seconds
+and needs a Chromium binary, and a serverless function has neither a surviving
+process nor (by default) the browser. On a request-scoped runtime the engine
+therefore *refuses* `ota_*` sources with a fast, actionable error instead of
+running them inside the request and timing out (`504`). Run them in Docker
+(`docker-compose.supabase.yml`, which installs Chromium via `ENABLE_OTA=1` and
+keeps the background sweep loop alive), on a VM, or via the standalone CLI
+(`python -m app.collect.ota.cli`), all writing to the same Supabase store — the
+dashboard then just reads the stored fares.
+
+The expected flow: click **Scraper** → the background loop sweeps and the
+screens fill as observations land in Supabase; click **Collect now** to run
+another sweep for the current moment. Data persists in Supabase until the next
+sweep.
+
 `backend/tests/test_ota_extractors.py` covers the parsing against captured
-fixtures; the live scrape itself needs a real browser + OTA egress, so run it
-on a machine/CI with both (Docker with `ENABLE_OTA=1` is the easy path).
+fixtures and `backend/tests/test_request_safe.py` pins the request-scoped
+refusal; the live scrape itself needs a real browser + OTA egress, so run it on
+a machine/CI with both (Docker with `ENABLE_OTA=1` is the easy path).
 
 If you outgrow that thin wrapper:
 

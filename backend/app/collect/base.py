@@ -125,6 +125,14 @@ class SourceAdapter(ABC):
     requires_robots_gate: bool = False
     #: adapters that emit no data until the operator configures credentials
     requires_credentials: bool = False
+    #: True when a sweep of this source can finish inside one short-lived HTTP
+    #: request. Browser scrapers (Playwright) set this False: they need Chromium
+    #: and a long-lived process, so request-scoped runtimes must refuse them
+    #: with a clear message instead of timing out mid-sweep (504).
+    request_safe: bool = True
+    #: Rough wall-clock cost per query, used to size in-request sweeps so a
+    #: slow source can never blow the platform's function timeout.
+    cost_per_query_seconds: float = 0.0
 
     def __init__(self, transport: Optional[HttpTransport] = None):
         self.transport = transport
@@ -165,6 +173,8 @@ class SourceAdapter(ABC):
             "base_url": self.base_url,
             "requires_credentials": self.requires_credentials,
             "robots_gated": self.requires_robots_gate,
+            "request_safe": self.request_safe,
+            "cost_per_query_seconds": self.cost_per_query_seconds,
             "user_agent": settings.user_agent if self.requires_robots_gate else "n/a (authorized channel)",
         }
 
